@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 25% 97%;
+    --foreground: 20 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 20 20% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 20% 12%;
+
+    --primary: 24 90% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 30% 93%;
+    --secondary-foreground: 20 20% 12%;
+
+    --muted: 30 15% 94%;
+    --muted-foreground: 20 10% 45%;
+
+    --accent: 24 80% 95%;
+    --accent-foreground: 24 90% 30%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 15% 90%;
+    --input: 30 15% 88%;
+    --ring: 24 90% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 20 20% 12%;
+    --sidebar-primary: 24 90% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 24 80% 95%;
+    --sidebar-accent-foreground: 24 90% 30%;
+    --sidebar-border: 30 15% 90%;
+    --sidebar-ring: 24 90% 50%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 20 14% 8%;
+    --foreground: 30 20% 95%;
+    --card: 20 14% 11%;
+    --card-foreground: 30 20% 95%;
+    --popover: 20 14% 11%;
+    --popover-foreground: 30 20% 95%;
+    --primary: 24 90% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 20 14% 16%;
+    --secondary-foreground: 30 20% 95%;
+    --muted: 20 14% 16%;
+    --muted-foreground: 30 10% 55%;
+    --accent: 24 40% 18%;
+    --accent-foreground: 24 80% 75%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 20 14% 18%;
+    --input: 20 14% 18%;
+    --ring: 24 90% 55%;
+    --sidebar-background: 20 14% 8%;
+    --sidebar-foreground: 30 20% 95%;
+    --sidebar-primary: 24 90% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 24 40% 18%;
+    --sidebar-accent-foreground: 24 80% 75%;
+    --sidebar-border: 20 14% 18%;
+    --sidebar-ring: 24 90% 55%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  /* Hide everything except thermal receipt */
+  body * {
+    visibility: hidden !important;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    width: 100% !important;
+  }
+
+  /* Show only thermal receipt and its contents */
+  .thermal-receipt,
+  .thermal-receipt * {
+    visibility: visible !important;
+  }
+
+  .thermal-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 2mm 3mm !important;
+    font-family: 'Courier New', 'Lucida Console', monospace !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    color: #000 !important;
+    background: #fff !important;
+    display: block !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Header */
+  .thermal-receipt .text-center {
+    text-align: center !important;
+  }
+
+  .thermal-receipt .text-base {
+    font-size: 14px !important;
+    font-weight: bold !important;
+  }
+
+  /* Items - full width flex rows */
+  .thermal-receipt .flex {
+    display: flex !important;
+    width: 100% !important;
+  }
+
+  .thermal-receipt .justify-between {
+    justify-content: space-between !important;
+  }
+
+  .thermal-receipt .text-xs {
+    font-size: 12px !important;
+  }
+
+  .thermal-receipt .text-\[10px\] {
+    font-size: 10px !important;
+  }
+
+  .thermal-receipt .text-sm {
+    font-size: 13px !important;
+  }
+
+  /* Dashed separators */
+  .thermal-receipt .border-dashed {
+    border-color: #000 !important;
+    border-top-style: dashed !important;
+    border-top-width: 1px !important;
+  }
+
+  /* Spacing */
+  .thermal-receipt .mb-1 { margin-bottom: 1mm !important; }
+  .thermal-receipt .mb-2 { margin-bottom: 2mm !important; }
+  .thermal-receipt .mt-1 { margin-top: 1mm !important; }
+  .thermal-receipt .mt-3 { margin-top: 3mm !important; }
+  .thermal-receipt .my-2 { margin-top: 2mm !important; margin-bottom: 2mm !important; }
+  .thermal-receipt .ml-2 { margin-left: 2mm !important; }
+
+  .thermal-receipt .font-bold {
+    font-weight: bold !important;
+  }
+}
