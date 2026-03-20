@@ -1,0 +1,1 @@
+INSERT INTO public.settings (key, value) VALUES ('logo_url', '') ON CONFLICT DO NOTHING;

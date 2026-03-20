@@ -1,0 +1,1 @@
+ALTER TABLE public.orders ADD COLUMN opened_at timestamptz DEFAULT NULL;
