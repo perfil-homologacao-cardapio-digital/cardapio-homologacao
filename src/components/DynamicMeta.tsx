@@ -8,7 +8,7 @@ import { useSettings } from '@/hooks/useSettings';
 export function DynamicMeta() {
   const { data: settings } = useSettings();
   const logoUrl = settings?.logo_url || '';
-  const businessName = settings?.business_name || 'Delícias da Casa';
+  const businessName = settings?.business_name || 'Cardápio Online';
 
   useEffect(() => {
     if (!logoUrl) return;
@@ -27,8 +27,8 @@ export function DynamicMeta() {
       if (el) el.setAttribute(attr, value);
     };
 
-    const title = `${businessName} - Cardápio Online`;
-    const description = 'Peça online de forma rápida e sem taxas.';
+    const title = businessName === 'Cardápio Online' ? 'Cardápio Online' : `${businessName} - Cardápio Online`;
+    const description = 'Peça online de forma rápida e prática.';
 
     updateMeta('meta[property="og:title"]', title);
     updateMeta('meta[property="og:description"]', description);
