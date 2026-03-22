@@ -600,7 +600,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
               <div>
                 <Label>Bairro *</Label>
                 <Select
-                  value={form.neighborhood_id || undefined}
+                  {...(form.neighborhood_id ? { value: form.neighborhood_id } : {})}
                   onValueChange={v => {
                     if (typeof v === 'string' && v) {
                       set('neighborhood_id', v);
@@ -611,11 +611,11 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
                     <SelectValue placeholder="Selecione o bairro" />
                   </SelectTrigger>
                   <SelectContent>
-                    {neighborhoods.map(n => (
+                    {Array.isArray(neighborhoods) && neighborhoods.map(n => n && n.id ? (
                       <SelectItem key={n.id} value={n.id}>
-                        {n.name} — {formatCurrency(safeNum(n.delivery_fee))}
+                        {n.name || 'Sem nome'} — {formatCurrency(safeNum(n.delivery_fee))}
                       </SelectItem>
-                    ))}
+                    ) : null)}
                   </SelectContent>
                 </Select>
               </div>
@@ -642,7 +642,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         <div>
           <Label>Forma de pagamento *</Label>
           <Select
-            value={form.payment_method || undefined}
+            {...(form.payment_method ? { value: form.payment_method } : {})}
             onValueChange={v => {
               if (typeof v === 'string' && v) {
                 set('payment_method', v);
