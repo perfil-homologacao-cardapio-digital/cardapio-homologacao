@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Component, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCart } from '@/lib/cart';
@@ -15,6 +15,33 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArrowLeft, CheckCircle2, Loader2, Bug, Clock, MessageCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+
+// Error Boundary to prevent white screen
+class CheckoutErrorBoundary extends Component<{ children: ReactNode; onBack: () => void }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; onBack: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[CheckoutErrorBoundary]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="container mx-auto px-4 py-12 max-w-lg text-center">
+          <p className="text-4xl mb-4">⚠️</p>
+          <h2 className="text-xl font-bold mb-2">Ocorreu um erro no checkout</h2>
+          <p className="text-muted-foreground mb-6">Por favor, tente novamente.</p>
+          <Button onClick={this.props.onBack} variant="outline" className="rounded-xl">Voltar ao cardápio</Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface CheckoutFormProps {
   onBack: () => void;
@@ -33,14 +60,21 @@ function isValidPhone(value: string): boolean {
   return digits.length >= 10 && digits.length <= 11;
 }
 
-export function CheckoutForm({ onBack }: CheckoutFormProps) {
+/** Safe number parse — never returns NaN */
+function safeNum(val: unknown, fallback = 0): number {
+  if (val == null) return fallback;
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const { items, subtotal, clearCart, hasPreorderItems } = useCart();
   const { data: settings } = useSettings();
   const freeDelivery = settings?.free_delivery === 'true';
   const allowPickup = settings?.allow_pickup === 'true';
   const pickupOnly = settings?.pickup_only === 'true';
   const minOrderEnabled = settings?.min_order_enabled === 'true';
-  const minOrderValue = parseFloat(settings?.min_order_value || '0') || 0;
+  const minOrderValue = safeNum(settings?.min_order_value);
   const { isOpen: storeIsOpen, todayLabel } = useStoreOpen();
   const allPreorder = items.length > 0 && items.every(i => i.is_preorder);
   const canCheckout = storeIsOpen || allPreorder;
@@ -55,9 +89,13 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
   const { data: hasActiveCoupons } = useQuery({
     queryKey: ['active-coupons-exist'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('discount_coupons' as any).select('id').eq('is_active', true).limit(1);
-      if (error) return false;
-      return (data as any[]).length > 0;
+      try {
+        const { data, error } = await supabase.from('discount_coupons' as any).select('id').eq('is_active', true).limit(1);
+        if (error) return false;
+        return Array.isArray(data) && data.length > 0;
+      } catch {
+        return false;
+      }
     },
   });
 
@@ -66,7 +104,7 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     queryFn: async () => {
       const { data, error } = await supabase.from('neighborhoods').select('*').order('name');
       if (error) throw error;
-      return data;
+      return data || [];
     },
     enabled: !freeDelivery,
   });
@@ -93,8 +131,10 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
   const isPickup = pickupOnly || (allowPickup && form.delivery_mode === 'pickup');
   const isDelivery = !isPickup;
 
-  const selectedNeighborhood = neighborhoods.find(n => n.id === form.neighborhood_id);
-  const deliveryFee = isPickup || freeDelivery ? 0 : (selectedNeighborhood?.delivery_fee || 0);
+  const selectedNeighborhood = Array.isArray(neighborhoods)
+    ? neighborhoods.find(n => n.id === form.neighborhood_id)
+    : undefined;
+  const deliveryFee = isPickup || freeDelivery ? 0 : safeNum(selectedNeighborhood?.delivery_fee);
 
   const availablePaymentMethods = [
     { value: 'pix', label: 'Pix', key: 'payment_pix' },
@@ -102,16 +142,17 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
     { value: 'debit', label: 'Cartão de Débito', key: 'payment_debit' },
   ].filter(method => !settings || settings[method.key] !== 'false');
+
   const normalizedPaymentMethod = typeof form.payment_method === 'string' ? form.payment_method.trim() : '';
   const hasValidPaymentMethod = availablePaymentMethods.some(method => method.value === normalizedPaymentMethod);
 
   // Coupon discount calculation
   const discountValue = appliedCoupon
     ? appliedCoupon.type === 'percentage'
-      ? Math.round((subtotal * (appliedCoupon.value / 100)) * 100) / 100
-      : appliedCoupon.value
+      ? Math.round((safeNum(subtotal) * (safeNum(appliedCoupon.value) / 100)) * 100) / 100
+      : safeNum(appliedCoupon.value)
     : 0;
-  const total = Math.max(0, subtotal + deliveryFee - discountValue);
+  const total = Math.max(0, safeNum(subtotal) + safeNum(deliveryFee) - safeNum(discountValue));
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
@@ -125,15 +166,15 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
         .eq('is_active', true)
         .limit(1);
       if (error) throw error;
-      const coupons = data as any[];
+      const coupons = Array.isArray(data) ? data : [];
       if (!coupons.length) { setCouponError('Cupom não encontrado ou inativo'); setCouponLoading(false); return; }
-      const coupon = coupons[0];
+      const coupon = coupons[0] as any;
       if (coupon.min_order_value && subtotal < coupon.min_order_value) {
         setCouponError(`Pedido mínimo de ${formatCurrency(coupon.min_order_value)} para este cupom`);
         setCouponLoading(false);
         return;
       }
-      setAppliedCoupon({ code: coupon.code, type: coupon.type, value: coupon.value });
+      setAppliedCoupon({ code: String(coupon.code || ''), type: String(coupon.type || 'fixed'), value: safeNum(coupon.value) });
       setCouponError('');
     } catch {
       setCouponError('Erro ao validar cupom');
@@ -146,6 +187,15 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     setAppliedCoupon(null);
     setCouponCode('');
     setCouponError('');
+  };
+
+  /** Safe setter — ensures only valid string/boolean values enter state */
+  const set = (key: string, value: unknown) => {
+    try {
+      setForm(prev => ({ ...prev, [key]: value ?? '' }));
+    } catch (err) {
+      console.error('[CheckoutForm] Error setting form field:', key, err);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -187,7 +237,8 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     }
 
     if (hasPreorderItems && form.preorder_date) {
-      const maxDays = Math.max(...items.filter(i => i.is_preorder && i.preorder_days).map(i => i.preorder_days || 0));
+      const preorderItems = items.filter(i => i.is_preorder && i.preorder_days);
+      const maxDays = preorderItems.length > 0 ? Math.max(...preorderItems.map(i => i.preorder_days || 0)) : 0;
       const selected = new Date(form.preorder_date + 'T00:00:00');
       const today = new Date();
       const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDays);
@@ -203,35 +254,28 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     
     try {
       orderPayload = {
-        customer_name: form.customer_name.trim(),
-        customer_phone: form.customer_phone.trim(),
-        address: isPickup ? 'Retirada no balcão' : form.address.trim(),
-        address_number: isPickup ? '-' : form.address_number.trim(),
-        complement: isPickup ? null : (form.complement.trim() || null),
-        neighborhood_id: isPickup || freeDelivery ? null : form.neighborhood_id || null,
+        customer_name: String(form.customer_name || '').trim(),
+        customer_phone: String(form.customer_phone || '').trim(),
+        address: isPickup ? 'Retirada no balcão' : String(form.address || '').trim(),
+        address_number: isPickup ? '-' : String(form.address_number || '').trim(),
+        complement: isPickup ? null : (String(form.complement || '').trim() || null),
+        neighborhood_id: isPickup || freeDelivery ? null : (form.neighborhood_id || null),
         neighborhood_name: isPickup || freeDelivery ? null : (selectedNeighborhood?.name || null),
-        delivery_fee: deliveryFee,
-        subtotal,
-        total,
-        payment_method: form.payment_method,
-        needs_change: form.needs_change,
-        change_amount: form.needs_change && form.change_amount ? parseFloat(form.change_amount) : null,
+        delivery_fee: safeNum(deliveryFee),
+        subtotal: safeNum(subtotal),
+        total: safeNum(total),
+        payment_method: String(form.payment_method || ''),
+        needs_change: Boolean(form.needs_change),
+        change_amount: form.needs_change && form.change_amount ? safeNum(form.change_amount) : null,
         preorder_date: form.preorder_date || null,
         coupon_code: appliedCoupon?.code || null,
-        discount_value: discountValue || 0,
+        discount_value: safeNum(discountValue),
       };
 
-      // 🔍 DEBUG: Objeto enviado para orders
       console.log('🔍 === DEBUG: INSERT em orders ===');
       console.log('📦 Objeto completo:', orderPayload);
-      console.log('🔑 Chaves do objeto:', Object.keys(orderPayload));
-      console.log('📋 Campos individuais:');
-      Object.keys(orderPayload).forEach(key => {
-        console.log(`   - ${key}:`, orderPayload[key]);
-      });
       console.log('🔍 ================================');
 
-      // Cria o pedido via função backend (evita INSERT+SELECT público em orders)
       const { data: created, error: createErr } = await supabase.functions.invoke('create-order', {
         body: {
           order: orderPayload,
@@ -247,7 +291,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
       clearCart();
       setSuccess(true);
     } catch (err: any) {
-      // Captura todos os detalhes do erro para debug
       setDebugError({
         error: {
           message: err.message || 'Erro desconhecido',
@@ -280,7 +323,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
       let itemsText = '';
       for (const item of sentItems) {
         const sels = item.selections || [];
-        // Check if combo (has selections with prices that look like combo sub-items)
         const comboSels = sels.filter((s: any) => s.group_name === 'Itens do Combo');
         const flavorSels = sels.filter((s: any) => s.group_name === 'Sabores');
         const crustSels = sels.filter((s: any) => s.group_name === 'Borda Recheada' || s.group_name === 'Borda');
@@ -289,7 +331,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
         itemsText += `${item.quantity}x ${item.name} - ${formatCurrency(item.price * item.quantity)}\n`;
 
         if (comboSels.length > 0) {
-          // Group combo items by name
           const grouped: Record<string, number> = {};
           comboSels.forEach((s: any) => { grouped[s.option_name] = (grouped[s.option_name] || 0) + 1; });
           Object.entries(grouped).forEach(([name, qty]) => { itemsText += `  ${qty}x ${name}\n`; });
@@ -364,8 +405,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
     );
   }
 
-  const set = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
-
   return (
     <>
       {/* Modal de Debug - Payload */}
@@ -421,7 +460,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
               </AlertDescription>
             </Alert>
 
-            {/* Informações individuais do erro */}
             <div className="space-y-4 bg-destructive/5 p-4 rounded-lg border border-destructive/20">
               <h3 className="font-bold text-lg text-destructive">📋 Detalhes do Erro:</h3>
               
@@ -432,21 +470,18 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
                     {debugError?.error?.message || 'N/A'}
                   </div>
                 </div>
-
                 <div>
                   <Label className="text-sm font-bold text-foreground">2. error.details:</Label>
                   <div className="bg-muted text-foreground p-3 rounded-lg mt-1 border border-border font-mono text-sm">
                     {debugError?.error?.details || 'N/A'}
                   </div>
                 </div>
-
                 <div>
                   <Label className="text-sm font-bold text-foreground">3. error.hint:</Label>
                   <div className="bg-muted text-foreground p-3 rounded-lg mt-1 border border-border font-mono text-sm">
                     {debugError?.error?.hint || 'N/A'}
                   </div>
                 </div>
-
                 <div>
                   <Label className="text-sm font-bold text-foreground">4. error.code:</Label>
                   <div className="bg-muted text-foreground p-3 rounded-lg mt-1 border border-border font-mono text-sm">
@@ -456,7 +491,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
               </div>
             </div>
 
-            {/* Objeto completo do erro em JSON */}
             <div className="space-y-2">
               <Label className="text-sm font-bold text-destructive">6. Objeto Completo do Erro (JSON):</Label>
               <pre className="bg-destructive/10 text-foreground p-4 rounded-lg overflow-auto text-xs font-mono border-2 border-destructive/30 whitespace-pre-wrap max-h-60">
@@ -464,7 +498,6 @@ export function CheckoutForm({ onBack }: CheckoutFormProps) {
               </pre>
             </div>
 
-            {/* Payload enviado */}
             <div className="space-y-2">
               <Label className="text-sm font-bold text-primary">1. Payload Enviado para orders (JSON):</Label>
               <pre className="bg-primary/5 text-foreground p-4 rounded-lg overflow-auto text-xs font-mono border border-primary/30 whitespace-pre-wrap max-h-60">
@@ -563,17 +596,24 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         {/* 4. Address fields — only for delivery */}
         {isDelivery && (
           <>
-            {!freeDelivery && (
+            {!freeDelivery && neighborhoods.length > 0 && (
               <div>
                 <Label>Bairro *</Label>
-                <Select value={form.neighborhood_id} onValueChange={v => set('neighborhood_id', v)}>
+                <Select
+                  value={form.neighborhood_id || undefined}
+                  onValueChange={v => {
+                    if (typeof v === 'string' && v) {
+                      set('neighborhood_id', v);
+                    }
+                  }}
+                >
                   <SelectTrigger className="rounded-xl">
                     <SelectValue placeholder="Selecione o bairro" />
                   </SelectTrigger>
                   <SelectContent>
                     {neighborhoods.map(n => (
                       <SelectItem key={n.id} value={n.id}>
-                        {n.name} — {formatCurrency(n.delivery_fee)}
+                        {n.name} — {formatCurrency(safeNum(n.delivery_fee))}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -601,7 +641,14 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         {/* Payment */}
         <div>
           <Label>Forma de pagamento *</Label>
-          <Select value={form.payment_method} onValueChange={v => set('payment_method', v)}>
+          <Select
+            value={form.payment_method || undefined}
+            onValueChange={v => {
+              if (typeof v === 'string' && v) {
+                set('payment_method', v);
+              }
+            }}
+          >
             <SelectTrigger className="rounded-xl" aria-invalid={!hasValidPaymentMethod && submitting}>
               <SelectValue placeholder="Selecione" />
             </SelectTrigger>
@@ -632,17 +679,22 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         )}
 
         {hasPreorderItems && (() => {
-          const maxDays = Math.max(...items.filter(i => i.is_preorder && i.preorder_days).map(i => i.preorder_days || 0));
-          const today = new Date();
-          const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDays);
-          const minStr = minDate.toISOString().split('T')[0];
-          return (
-            <div className="bg-warning/10 rounded-xl p-3">
-              <Label htmlFor="preorder-date">Data de entrega (encomenda) *</Label>
-              <Input id="preorder-date" type="date" required min={minStr} value={form.preorder_date} onChange={e => set('preorder_date', e.target.value)} className="rounded-xl mt-1" />
-              <p className="text-xs text-muted-foreground mt-1">Data mínima: {minDate.toLocaleDateString('pt-BR')}</p>
-            </div>
-          );
+          try {
+            const preorderItems = items.filter(i => i.is_preorder && i.preorder_days);
+            const maxDays = preorderItems.length > 0 ? Math.max(...preorderItems.map(i => i.preorder_days || 0)) : 1;
+            const today = new Date();
+            const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDays);
+            const minStr = minDate.toISOString().split('T')[0];
+            return (
+              <div className="bg-warning/10 rounded-xl p-3">
+                <Label htmlFor="preorder-date">Data de entrega (encomenda) *</Label>
+                <Input id="preorder-date" type="date" required min={minStr} value={form.preorder_date} onChange={e => set('preorder_date', e.target.value)} className="rounded-xl mt-1" />
+                <p className="text-xs text-muted-foreground mt-1">Data mínima: {minDate.toLocaleDateString('pt-BR')}</p>
+              </div>
+            );
+          } catch {
+            return null;
+          }
         })()}
 
         {/* Coupon field — only if active coupons exist */}
@@ -676,21 +728,21 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         <div className="bg-card border border-border rounded-xl p-4 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
-            <span>{formatCurrency(subtotal)}</span>
+            <span>{formatCurrency(safeNum(subtotal))}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Taxa de entrega</span>
-            <span>{isPickup ? 'Retirada' : freeDelivery ? 'Grátis' : formatCurrency(deliveryFee)}</span>
+            <span>{isPickup ? 'Retirada' : freeDelivery ? 'Grátis' : formatCurrency(safeNum(deliveryFee))}</span>
           </div>
           {discountValue > 0 && (
             <div className="flex justify-between text-sm text-primary">
               <span>Desconto ({appliedCoupon?.code})</span>
-              <span>-{formatCurrency(discountValue)}</span>
+              <span>-{formatCurrency(safeNum(discountValue))}</span>
             </div>
           )}
           <div className="flex justify-between font-extrabold text-lg pt-2 border-t border-border">
             <span>Total</span>
-            <span className="text-primary">{formatCurrency(total)}</span>
+            <span className="text-primary">{formatCurrency(safeNum(total))}</span>
           </div>
         </div>
 
@@ -716,5 +768,13 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
       </form>
       </div>
     </>
+  );
+}
+
+export function CheckoutForm({ onBack }: CheckoutFormProps) {
+  return (
+    <CheckoutErrorBoundary onBack={onBack}>
+      <CheckoutFormInner onBack={onBack} />
+    </CheckoutErrorBoundary>
   );
 }
