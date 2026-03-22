@@ -631,7 +631,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
                   {...(form.neighborhood_id ? { value: form.neighborhood_id } : {})}
                   onValueChange={v => {
                     if (typeof v === 'string' && v) {
-                      set('neighborhood_id', v);
+                      setTimeout(() => set('neighborhood_id', v), 0);
                     }
                   }}
                 >
@@ -673,7 +673,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
             {...(form.payment_method ? { value: form.payment_method } : {})}
             onValueChange={v => {
               if (typeof v === 'string' && v) {
-                set('payment_method', v);
+                setTimeout(() => set('payment_method', v), 0);
               }
             }}
           >
