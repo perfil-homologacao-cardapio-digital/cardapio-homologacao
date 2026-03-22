@@ -1,4 +1,4 @@
-import { useState, Component, ReactNode } from 'react';
+import { useEffect, useMemo, useState, Component, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCart } from '@/lib/cart';
@@ -67,6 +67,10 @@ function safeNum(val: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const { items, subtotal, clearCart, hasPreorderItems } = useCart();
   const { data: settings } = useSettings();
@@ -128,23 +132,47 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const [debugPayload, setDebugPayload] = useState<any>(null);
   const [debugError, setDebugError] = useState<any>(null);
 
+  const safeNeighborhoods = useMemo(
+    () => Array.isArray(neighborhoods)
+      ? neighborhoods.flatMap((item) => {
+          if (!isRecord(item) || typeof item.id !== 'string') return [];
+          return [{
+            id: item.id,
+            name: typeof item.name === 'string' ? item.name : null,
+            delivery_fee: safeNum(item.delivery_fee),
+          }];
+        })
+      : [],
+    [neighborhoods],
+  );
+
   const isPickup = pickupOnly || (allowPickup && form.delivery_mode === 'pickup');
   const isDelivery = !isPickup;
 
-  const selectedNeighborhood = Array.isArray(neighborhoods)
-    ? neighborhoods.find(n => n.id === form.neighborhood_id)
-    : undefined;
+  const selectedNeighborhood = safeNeighborhoods.find(n => n.id === form.neighborhood_id) ?? null;
   const deliveryFee = isPickup || freeDelivery ? 0 : safeNum(selectedNeighborhood?.delivery_fee);
 
-  const availablePaymentMethods = [
+  const availablePaymentMethods = useMemo(() => [
     { value: 'pix', label: 'Pix', key: 'payment_pix' },
     { value: 'cash', label: 'Dinheiro', key: 'payment_cash' },
     { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
     { value: 'debit', label: 'Cartão de Débito', key: 'payment_debit' },
-  ].filter(method => !settings || settings[method.key] !== 'false');
+  ].filter(method => !settings || settings[method.key] !== 'false'), [settings]);
 
   const normalizedPaymentMethod = typeof form.payment_method === 'string' ? form.payment_method.trim() : '';
   const hasValidPaymentMethod = availablePaymentMethods.some(method => method.value === normalizedPaymentMethod);
+
+  useEffect(() => {
+    if (form.neighborhood_id && !safeNeighborhoods.some(n => n.id === form.neighborhood_id)) {
+      setForm(prev => ({ ...prev, neighborhood_id: '' }));
+    }
+  }, [form.neighborhood_id, safeNeighborhoods]);
+
+  useEffect(() => {
+    if (form.payment_method && !availablePaymentMethods.some(method => method.value === form.payment_method)) {
+      setForm(prev => ({ ...prev, payment_method: '', needs_change: false, change_amount: '' }));
+    }
+  }, [availablePaymentMethods, form.payment_method]);
 
   // Coupon discount calculation
   const discountValue = appliedCoupon
@@ -596,7 +624,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         {/* 4. Address fields — only for delivery */}
         {isDelivery && (
           <>
-            {!freeDelivery && neighborhoods.length > 0 && (
+            {!freeDelivery && safeNeighborhoods.length > 0 && (
               <div>
                 <Label>Bairro *</Label>
                 <Select
@@ -611,7 +639,7 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
                     <SelectValue placeholder="Selecione o bairro" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Array.isArray(neighborhoods) && neighborhoods.map(n => n && n.id ? (
+                    {safeNeighborhoods.map(n => n.id ? (
                       <SelectItem key={n.id} value={n.id}>
                         {n.name || 'Sem nome'} — {formatCurrency(safeNum(n.delivery_fee))}
                       </SelectItem>
