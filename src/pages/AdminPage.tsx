@@ -208,7 +208,7 @@ export default function AdminPage() {
   const badgeCount = unviewedCount;
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex" translate="no">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-60 border-r border-border bg-card p-4 sticky top-0 h-screen">
         <div className="flex items-center gap-2 mb-8">
