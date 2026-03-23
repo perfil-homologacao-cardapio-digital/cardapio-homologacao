@@ -801,8 +801,10 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
 
 export function CheckoutForm({ onBack }: CheckoutFormProps) {
   return (
-    <CheckoutErrorBoundary onBack={onBack}>
-      <CheckoutFormInner onBack={onBack} />
-    </CheckoutErrorBoundary>
+    <div translate="no" className="notranslate">
+      <CheckoutErrorBoundary onBack={onBack}>
+        <CheckoutFormInner onBack={onBack} />
+      </CheckoutErrorBoundary>
+    </div>
   );
 }
