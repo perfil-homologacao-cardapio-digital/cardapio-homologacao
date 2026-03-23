@@ -21,6 +21,7 @@ const queryClient = new QueryClient({
 });
 
 const App = () => (
+  <div translate="no" className="notranslate">
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <DynamicMeta />
@@ -38,6 +39,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </div>
 );
 
 export default App;
