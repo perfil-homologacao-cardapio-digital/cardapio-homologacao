@@ -1,14 +1,14 @@
 import { useSettings } from '@/hooks/useSettings';
 import { ShoppingBag, MapPin, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
+import { Skeleton } from '@/components/ui/skeleton';
 interface StoreHeaderProps {
   onTrackOrder?: () => void;
 }
 
 export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
-  const { data: settings } = useSettings();
-  const name = settings?.business_name || 'Delícias da Casa';
+  const { data: settings, isLoading } = useSettings();
+  const name = settings?.business_name || '';
   const desc = settings?.business_description || '';
   const logoUrl = settings?.logo_url || '';
   const instagramUrl = settings?.instagram_url || '';
@@ -27,8 +27,17 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
               </div>
             )}
             <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground font-display">{name}</h1>
-              {desc && <p className="text-sm md:text-base text-muted-foreground mt-0.5">{desc}</p>}
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-7 w-48 rounded-md" />
+                  <Skeleton className="h-4 w-32 mt-1 rounded-md" />
+                </>
+              ) : (
+                <>
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground font-display">{name}</h1>
+                  {desc && <p className="text-sm md:text-base text-muted-foreground mt-0.5">{desc}</p>}
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
