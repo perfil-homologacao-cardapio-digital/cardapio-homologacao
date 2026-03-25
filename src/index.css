@@ -106,45 +106,139 @@
   }
 }
 
+/* Product detail modal — mobile-safe positioning */
+.product-detail-dialog {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  transform: none !important;
+  margin: 5vh auto auto auto !important;
+  max-height: 90vh !important;
+  animation: none !important;
+}
+@media (min-width: 640px) {
+  .product-detail-dialog {
+    margin: auto !important;
+  }
+}
+
 @media print {
   @page {
     size: 80mm auto;
     margin: 0;
   }
 
-  /* Hide everything except thermal receipt */
-  body * {
-    visibility: hidden !important;
-  }
-
-  body {
+  /* Reset global document sizing for thermal roll printing */
+  html, body {
+    width: 80mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
-    width: 100% !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
   }
 
-  /* Show only thermal receipt and its contents */
-  .thermal-receipt,
-  .thermal-receipt * {
-    visibility: visible !important;
+  /* Remove app layout from print flow completely */
+  #root {
+    display: none !important;
   }
 
+  [data-radix-portal] {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Hide non-print elements completely instead of only hiding visually */
+  .no-print {
+    display: none !important;
+  }
+
+  [data-radix-dialog-overlay] {
+    display: none !important;
+  }
+
+  /* Neutralize dialog/modal wrappers during print */
+  [role="dialog"],
+  [data-radix-dialog-content],
+  .fixed,
+  .order-print-dialog {
+    position: static !important;
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    width: 80mm !important;
+    min-width: 80mm !important;
+    max-width: 80mm !important;
+    transform: none !important;
+    inset: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    gap: 0 !important;
+    background: #fff !important;
+  }
+
+  .order-print-dialog > :not(.thermal-receipt) {
+    display: none !important;
+  }
+
+  .order-print-dialog [data-radix-dialog-close] {
+    display: none !important;
+  }
+
+  /* Render only the receipt as a compact continuous strip */
   .thermal-receipt {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    max-width: 100% !important;
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 80mm !important;
+    min-width: 80mm !important;
+    max-width: 80mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 2mm 3mm !important;
-    font-family: 'Courier New', 'Lucida Console', monospace !important;
+    font-family: Arial, Helvetica, sans-serif !important;
     font-size: 12px !important;
     line-height: 1.4 !important;
     color: #000 !important;
     background: #fff !important;
-    display: block !important;
     box-sizing: border-box !important;
+    overflow: visible !important;
+    page-break-before: auto !important;
+    page-break-after: auto !important;
+    page-break-inside: avoid !important;
+    break-before: auto !important;
+    break-after: auto !important;
+    break-inside: avoid !important;
+    page-break-after: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    letter-spacing: 0 !important;
+    word-spacing: normal !important;
+  }
+
+  .thermal-receipt * {
+    visibility: visible !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   /* Header */

@@ -4,6 +4,8 @@ export interface DaySchedule {
   isOpen: boolean;
   open: string; // "HH:mm"
   close: string; // "HH:mm"
+  open2?: string; // "HH:mm" - optional second shift
+  close2?: string; // "HH:mm" - optional second shift
 }
 
 export type WeeklySchedule = Record<string, DaySchedule>;
@@ -50,7 +52,13 @@ export function parseSchedule(raw: string | undefined | null): WeeklySchedule {
       const key = String(d);
       const day = parsed[key];
       if (day && typeof day.isOpen === 'boolean' && typeof day.open === 'string' && typeof day.close === 'string') {
-        schedule[key] = { isOpen: day.isOpen, open: day.open, close: day.close };
+        const entry: DaySchedule = { isOpen: day.isOpen, open: day.open, close: day.close };
+        // Preserve optional second shift if present
+        if (typeof day.open2 === 'string' && typeof day.close2 === 'string') {
+          entry.open2 = day.open2;
+          entry.close2 = day.close2;
+        }
+        schedule[key] = entry;
       } else {
         schedule[key] = { ...DEFAULT_SCHEDULE[key] };
       }
@@ -93,17 +101,27 @@ export function isStoreOpen(schedule: WeeklySchedule): boolean {
   if (!today || !today.isOpen) return false;
   
   const currentMinutes = hour * 60 + minute;
-  const [openH, openM] = today.open.split(':').map(Number);
-  const [closeH, closeM] = today.close.split(':').map(Number);
-  const openMinutes = openH * 60 + openM;
-  const closeMinutes = closeH * 60 + closeM;
   
-  // Handle overnight shifts (e.g., 18:00 to 02:00)
-  if (closeMinutes <= openMinutes) {
-    return currentMinutes >= openMinutes || currentMinutes < closeMinutes;
-  }
+  // Helper to check if current time is within a shift
+  const isInShift = (openStr: string, closeStr: string): boolean => {
+    const [oH, oM] = openStr.split(':').map(Number);
+    const [cH, cM] = closeStr.split(':').map(Number);
+    const openMin = oH * 60 + oM;
+    const closeMin = cH * 60 + cM;
+    // Handle overnight shifts (e.g., 18:00 to 02:00)
+    if (closeMin <= openMin) {
+      return currentMinutes >= openMin || currentMinutes < closeMin;
+    }
+    return currentMinutes >= openMin && currentMinutes < closeMin;
+  };
   
-  return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+  // Check shift 1
+  if (isInShift(today.open, today.close)) return true;
+  
+  // Check optional shift 2
+  if (today.open2 && today.close2 && isInShift(today.open2, today.close2)) return true;
+  
+  return false;
 }
 
 /**
@@ -123,5 +141,9 @@ export function getTodayHoursLabel(schedule: WeeklySchedule): string {
   const today = schedule[String(dayNum)];
   
   if (!today || !today.isOpen) return 'Fechado hoje';
-  return `Hoje: ${today.open} às ${today.close}`;
+  let label = `Hoje: ${today.open} às ${today.close}`;
+  if (today.open2 && today.close2) {
+    label += ` | ${today.open2} às ${today.close2}`;
+  }
+  return label;
 }

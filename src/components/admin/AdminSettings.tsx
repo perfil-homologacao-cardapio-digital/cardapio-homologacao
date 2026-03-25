@@ -38,6 +38,10 @@ export function AdminSettings() {
     payment_credit: true,
     payment_debit: true,
     whatsapp_order_enabled: false,
+    store_address: '',
+    store_address_number: '',
+    store_address_complement: '',
+    store_neighborhood: '',
   });
   const [schedule, setSchedule] = useState<WeeklySchedule>(() => parseSchedule(null));
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -63,6 +67,10 @@ export function AdminSettings() {
         payment_credit: settings.payment_credit !== 'false',
         payment_debit: settings.payment_debit !== 'false',
         whatsapp_order_enabled: settings.whatsapp_order_enabled === 'true',
+        store_address: settings.store_address || '',
+        store_address_number: settings.store_address_number || '',
+        store_address_complement: settings.store_address_complement || '',
+        store_neighborhood: settings.store_neighborhood || '',
       });
       setSchedule(parseSchedule(settings.weekly_schedule));
     }
@@ -89,6 +97,10 @@ export function AdminSettings() {
         { key: 'payment_credit', value: form.payment_credit ? 'true' : 'false' },
         { key: 'payment_debit', value: form.payment_debit ? 'true' : 'false' },
         { key: 'whatsapp_order_enabled', value: form.whatsapp_order_enabled ? 'true' : 'false' },
+        { key: 'store_address', value: form.store_address },
+        { key: 'store_address_number', value: form.store_address_number },
+        { key: 'store_address_complement', value: form.store_address_complement },
+        { key: 'store_neighborhood', value: form.store_neighborhood },
         { key: 'weekly_schedule', value: JSON.stringify(schedule) },
       ];
       for (const entry of entries) {
@@ -158,6 +170,18 @@ export function AdminSettings() {
         <div><Label>Descrição</Label><Textarea value={form.business_description} onChange={e => set('business_description', e.target.value)} className="rounded-xl" /></div>
         <div><Label>WhatsApp</Label><Input value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="(00) 00000-0000" className="rounded-xl" /></div>
         <div><Label>Link do Instagram</Label><Input value={form.instagram_url} onChange={e => set('instagram_url', e.target.value)} placeholder="https://www.instagram.com/sualoja" className="rounded-xl" /></div>
+
+        {/* Endereço da loja */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-3">
+          <Label className="font-bold">📍 Endereço da loja (retirada no balcão)</Label>
+          <p className="text-xs text-muted-foreground">Exibido ao cliente quando selecionar retirada no balcão</p>
+          <div><Label>Rua / Avenida</Label><Input value={form.store_address} onChange={e => set('store_address', e.target.value)} placeholder="Ex: Rua das Flores" className="rounded-xl" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label>Número</Label><Input value={form.store_address_number} onChange={e => set('store_address_number', e.target.value)} placeholder="123" className="rounded-xl" /></div>
+            <div><Label>Complemento</Label><Input value={form.store_address_complement} onChange={e => set('store_address_complement', e.target.value)} placeholder="Sala 1" className="rounded-xl" /></div>
+          </div>
+          <div><Label>Bairro</Label><Input value={form.store_neighborhood} onChange={e => set('store_neighborhood', e.target.value)} placeholder="Centro" className="rounded-xl" /></div>
+        </div>
         <div><Label>Notas de entrega</Label><Textarea value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} className="rounded-xl" /></div>
         <WeeklyScheduleEditor schedule={schedule} onChange={setSchedule} />
         <div className="flex items-center justify-between bg-accent/50 rounded-xl p-4">

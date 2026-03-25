@@ -383,7 +383,16 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         ``,
         `Tipo: ${isPickupOrder ? 'Retirada no balcão' : 'Entrega'}`,
       ];
-      if (!isPickupOrder) {
+      if (isPickupOrder) {
+        const sAddr = settings?.store_address;
+        if (sAddr) {
+          let fullStoreAddr = sAddr;
+          if (settings?.store_address_number) fullStoreAddr += `, ${settings.store_address_number}`;
+          if (settings?.store_address_complement) fullStoreAddr += ` - ${settings.store_address_complement}`;
+          if (settings?.store_neighborhood) fullStoreAddr += ` (${settings.store_neighborhood})`;
+          lines.push(`📍 Retirar em: ${fullStoreAddr}`);
+        }
+      } else {
         let addr = orderPayload.address;
         if (orderPayload.address_number) addr += `, ${orderPayload.address_number}`;
         if (orderPayload.complement) addr += ` - ${orderPayload.complement}`;
@@ -405,6 +414,13 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       }
       lines.push(`Entrega: ${isPickupOrder ? 'Retirada' : orderPayload.delivery_fee === 0 ? 'Grátis' : formatCurrency(orderPayload.delivery_fee)}`);
       lines.push(`*Total: ${formatCurrency(orderPayload.total)}*`);
+
+      if (orderPayload.preorder_date) {
+        const [year, month, day] = orderPayload.preorder_date.split('T')[0]?.split('-') ?? [];
+        const formatted = year && month && day ? `${day}/${month}/${year}` : orderPayload.preorder_date;
+        lines.push(``);
+        lines.push(`📅 *Data da encomenda: ${formatted}*`);
+      }
 
       const msg = encodeURIComponent(lines.join('\n'));
       return `https://wa.me/${fullPhone}?text=${msg}`;
@@ -600,6 +616,23 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
             </RadioGroup>
           </div>
         ) : null}
+
+        {/* Store address for pickup */}
+        {isPickup && (() => {
+          const addr = settings?.store_address;
+          if (!addr) return null;
+          let fullAddr = addr;
+          if (settings?.store_address_number) fullAddr += `, ${settings.store_address_number}`;
+          if (settings?.store_address_complement) fullAddr += ` - ${settings.store_address_complement}`;
+          if (settings?.store_neighborhood) fullAddr += ` (${settings.store_neighborhood})`;
+          return (
+            <div className="bg-accent/50 rounded-xl p-4">
+              <p className="text-sm font-bold mb-1">📍 Retirada no balcão</p>
+              <p className="text-sm text-muted-foreground">Retire seu pedido em:</p>
+              <p className="text-sm font-semibold text-foreground">{fullAddr}</p>
+            </div>
+          );
+        })()}
 
         {/* 2. Name */}
         <div>

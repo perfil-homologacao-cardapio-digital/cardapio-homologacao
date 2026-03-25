@@ -1,5 +1,5 @@
 import { useState, memo, useCallback } from 'react';
-import { Plus, Minus, Clock, AlertCircle, ShoppingCart } from 'lucide-react';
+import { Plus, Minus, Clock, AlertCircle, ShoppingCart, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/format';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { ProductConfigModal } from './ProductConfigModal';
 import { ComboConfigModal } from './ComboConfigModal';
 import { FlavorConfigModal } from './FlavorConfigModal';
+import { ProductDetailModal } from './ProductDetailModal';
 
 interface ProductCardProps {
   product: {
@@ -35,6 +36,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
   const [configOpen, setConfigOpen] = useState(false);
   const [comboOpen, setComboOpen] = useState(false);
   const [flavorOpen, setFlavorOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const handleImgLoad = useCallback(() => setImgLoaded(true), []);
@@ -82,7 +84,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
   return (
     <>
       <div className={cn(
-        "group relative flex gap-3 p-3 rounded-xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-all",
+        "group relative flex gap-3 p-3 rounded-xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-all overflow-hidden",
         !product.available && "opacity-60"
       )}>
         <div className="relative flex-shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-lg overflow-hidden bg-muted">
@@ -114,11 +116,22 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
             </div>
           )}
         </div>
-        <div className="flex flex-col flex-1 min-w-0 justify-between">
-          <div>
-            <h3 className="font-bold text-sm md:text-base text-foreground leading-tight">{product.name}</h3>
+        <div className="flex flex-col flex-1 min-w-0 justify-between overflow-hidden">
+          <div className="min-w-0">
+            <h3 className="font-bold text-sm md:text-base text-foreground leading-tight truncate">{product.name}</h3>
             {product.description && (
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{product.description}</p>
+              <div className="mt-0.5 min-w-0">
+                <p className="text-xs text-muted-foreground line-clamp-2 break-words overflow-hidden">{product.description}</p>
+                {product.description.length > 80 && (
+                  <button
+                    type="button"
+                    onClick={() => setDetailOpen(true)}
+                    className="text-[10px] text-primary font-semibold flex items-center gap-0.5 mt-0.5 hover:underline"
+                  >
+                    Ver mais <ChevronDown className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             )}
             {product.is_preorder && product.preorder_days && product.preorder_days > 0 && (
               <p className="text-xs text-warning flex items-center gap-1 mt-1">
@@ -126,21 +139,23 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between mt-2 gap-2">
+          <div className="flex flex-col mt-2 gap-1.5 min-w-0">
             <span className="text-base font-extrabold text-primary">
               {mode === 'combo' ? 'Monte o seu' : formatCurrency(product.price)}
             </span>
             {product.available ? (
               showChooseButton ? (
-                <Button
-                  size="sm"
-                  className="rounded-full h-8 px-4 shadow-md shadow-primary/20 gap-1 text-xs"
-                  onClick={handleAdd}
-                >
-                  <ShoppingCart className="h-3.5 w-3.5" /> {chooseLabel}
-                </Button>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    className="rounded-full h-8 px-4 shadow-md shadow-primary/20 gap-1 text-xs shrink-0"
+                    onClick={handleAdd}
+                  >
+                    <ShoppingCart className="h-3.5 w-3.5" /> {chooseLabel}
+                  </Button>
+                </div>
               ) : (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-end gap-1">
                   <div className="flex items-center border border-border rounded-full overflow-hidden bg-muted/50">
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-full p-0 hover:bg-primary/10" onClick={() => setQuantity(q => Math.max(1, q - 1))}>
                       <Minus className="h-3 w-3" />
@@ -154,17 +169,23 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
                       <Plus className="h-3 w-3" />
                     </Button>
                   </div>
-                  <Button size="sm" className="rounded-full h-8 px-3 shadow-md shadow-primary/20 gap-1 text-xs" onClick={handleAdd}>
+                  <Button size="sm" className="rounded-full h-8 px-3 shadow-md shadow-primary/20 gap-1 text-xs shrink-0" onClick={handleAdd}>
                     <ShoppingCart className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               )
             ) : (
-              <span className="text-xs font-semibold text-destructive bg-destructive/10 px-2 py-1 rounded-full">Indisponível</span>
+              <span className="text-xs font-semibold text-destructive bg-destructive/10 px-2 py-1 rounded-full self-end">Indisponível</span>
             )}
           </div>
         </div>
       </div>
+
+      <ProductDetailModal
+        product={product}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
 
       {product.has_options && mode === 'normal' && (
         <ProductConfigModal

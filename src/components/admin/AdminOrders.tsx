@@ -11,6 +11,7 @@ import { Printer, Eye, Trash2, ChevronLeft, ChevronRight, MessageCircle } from '
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useSettings } from '@/hooks/useSettings';
+import { buildAdminWhatsAppMessage } from '@/lib/adminWhatsAppMessage';
 const ITEMS_PER_PAGE = 7;
 
 interface AdminOrdersProps {
@@ -103,50 +104,12 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
     if (!order) return;
     const phone = order.customer_phone.replace(/\D/g, '');
     const phoneWithCountry = phone.length === 11 ? `55${phone}` : phone.length === 10 ? `55${phone}` : phone;
-    const hasName = storeName && storeName !== 'Meu Estabelecimento';
-    const greeting = hasName ? `aqui é do estabelecimento *${storeName}*` : `aqui é do *nosso estabelecimento*`;
-
-    let msg = `Olá, ${greeting}! 😊\n\nRecebemos seu pedido:\n\n`;
-    msg += `📋 *Pedido #${order.order_number}*\n`;
-    msg += `📅 ${formatDate(order.created_at)}\n\n`;
-
-    // Items
-    msg += `*Itens:*\n`;
-    orderItems.forEach(item => {
-      msg += `${item.quantity}x ${item.product_name} - ${formatCurrency(Number(item.subtotal))}\n`;
-      const itemSels = orderItemSelections.filter(s => s.order_item_id === item.id);
-      const grouped = itemSels.reduce((acc, s) => {
-        const gn = s.group_name_snapshot || 'Opções';
-        if (!acc[gn]) acc[gn] = [];
-        acc[gn].push(s.option_name_snapshot || '');
-        return acc;
-      }, {} as Record<string, string[]>);
-      Object.entries(grouped).forEach(([gn, opts]) => {
-        msg += `  └ ${gn}: ${opts.join(', ')}\n`;
-      });
+    const msg = buildAdminWhatsAppMessage({
+      order,
+      items: orderItems,
+      selections: orderItemSelections,
+      storeName,
     });
-
-    msg += `\n`;
-    msg += `Subtotal: ${formatCurrency(Number(order.subtotal))}\n`;
-    msg += `Entrega: ${Number(order.delivery_fee) === 0 ? 'Grátis' : formatCurrency(Number(order.delivery_fee))}\n`;
-    msg += `*Total: ${formatCurrency(Number(order.total))}*\n`;
-    msg += `Pagamento: ${PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}\n`;
-    if (order.needs_change && order.change_amount) {
-      msg += `Troco para: ${formatCurrency(Number(order.change_amount))}\n`;
-    }
-
-    msg += `\n`;
-    if (order.address === 'Retirada no balcão') {
-      msg += `📍 *Retirada no balcão*\n`;
-    } else {
-      msg += `📍 *Entrega:*\n`;
-      msg += `${order.address}, ${order.address_number}`;
-      if (order.complement) msg += ` - ${order.complement}`;
-      msg += `\n`;
-      if (order.neighborhood_name) msg += `${order.neighborhood_name}\n`;
-    }
-
-    msg += `\n✅ *Podemos confirmar?*`;
 
     window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -245,7 +208,7 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
       )}
 
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="order-print-dialog max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Pedido #{order?.order_number}</DialogTitle>
           </DialogHeader>
@@ -260,7 +223,7 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                   {order.neighborhood_name && <div><span className="text-muted-foreground">Bairro:</span> <strong>{order.neighborhood_name}</strong></div>}
                   <div><span className="text-muted-foreground">Pagamento:</span> <strong>{PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</strong></div>
                   {order.needs_change && <div><span className="text-muted-foreground">Troco para:</span> <strong>{order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</strong></div>}
-                  {order.preorder_date && <div><span className="text-muted-foreground">Data encomenda:</span> <strong>{order.preorder_date}</strong></div>}
+                  {order.preorder_date && <div><span className="text-muted-foreground">Data encomenda:</span> <strong>{order.preorder_date.split('-').reverse().join('/')}</strong></div>}
                   <div className="col-span-2 flex items-center gap-2">
                     <span className="text-muted-foreground">Status pgto:</span>
                     <Select value={(order as any).payment_status || 'pending'} onValueChange={v => updatePaymentStatus.mutate({ id: order.id, payment_status: v })}>
@@ -331,7 +294,7 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
               </div>
 
               {/* Thermal print layout - only visible on print */}
-              <div className="hidden print-only thermal-receipt">
+              <div className="hidden print-only thermal-receipt" data-print-receipt="true">
                 <div className="text-center font-bold text-base mb-2">{storeName}</div>
                 <div className="text-center text-xs mb-1">Pedido #{order.order_number}</div>
                 <div className="text-center text-xs mb-2">{formatDate(order.created_at)}</div>
@@ -341,10 +304,10 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                 <div className="text-xs">{formatPhone(order.customer_phone)}</div>
 
                 {order.address === 'Retirada no balcão' ? (
-                  <div className="text-xs font-bold mt-1">⬆ RETIRADA NO BALCÃO</div>
+                  <div className="text-xs font-bold mt-1">RETIRADA NO BALCAO</div>
                 ) : (
                   <>
-                    <div className="text-xs mt-1">📍 {order.address}, {order.address_number}</div>
+                    <div className="text-xs mt-1">End: {order.address}, {order.address_number}</div>
                     {order.complement && <div className="text-xs">{order.complement}</div>}
                     {order.neighborhood_name && <div className="text-xs">{order.neighborhood_name}</div>}
                   </>
@@ -392,6 +355,7 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                 <div className="border-t border-dashed my-2" />
                 <div className="text-xs">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                 {order.needs_change && <div className="text-xs">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
+                {order.preorder_date && <div className="text-xs font-bold mt-1">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
                 <div className="text-center text-[10px] mt-3">--- Obrigado pela preferência! ---</div>
               </div>
             </>
