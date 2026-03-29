@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/format';
-import { Package, ShoppingCart, Clock, DollarSign, CalendarIcon } from 'lucide-react';
+import { Package, ShoppingCart, Clock, DollarSign, CalendarIcon, Crown } from 'lucide-react';
+import { useSettings } from '@/hooks/useSettings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -27,6 +28,7 @@ function getStartOfDay(date: Date) {
 }
 
 export function AdminDashboard() {
+  const { data: settings } = useSettings();
   const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>('today');
   const [customFrom, setCustomFrom] = useState<Date | undefined>();
   const [customTo, setCustomTo] = useState<Date | undefined>();
@@ -81,9 +83,26 @@ export function AdminDashboard() {
     { label: 'Pendentes', value: pendingOrders.length, icon: Clock, color: 'text-warning' },
   ];
 
-  return (
+    const planType = settings?.plan_type;
+    const planExpires = settings?.plan_expires_at;
+    const formattedExpiry = planExpires
+      ? planExpires.split('-').reverse().join('/')
+      : '';
+
+    return (
     <div>
       <h1 className="text-2xl font-extrabold mb-6">Dashboard</h1>
+
+      {planType && planExpires && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-border/50 bg-accent/50 px-4 py-3">
+          <Crown className="h-5 w-5 text-primary shrink-0" />
+          <div className="text-sm">
+            <span className="font-bold text-foreground">{planType}</span>
+            <span className="text-muted-foreground ml-2">· Válido até {formattedExpiry}</span>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {stats.map(s => (
           <Card key={s.label} className="rounded-xl border-border/50">
