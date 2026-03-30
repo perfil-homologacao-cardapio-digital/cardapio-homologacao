@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/format';
 import { useCart } from '@/lib/cart';
+import { getAvailableStock, getEffectiveAvailability, getLowStockLabel } from '@/lib/stock';
 import { ShoppingCart, Plus, Minus, Clock, AlertCircle, X } from 'lucide-react';
 import { ProductConfigModal } from './ProductConfigModal';
 import { ComboConfigModal } from './ComboConfigModal';
@@ -25,6 +26,8 @@ interface ProductDetailModalProps {
     combo_max_qty?: number | null;
     flavor_count?: number | null;
     flavor_price_rule?: string | null;
+    has_stock_control?: boolean;
+    stock_quantity?: number | null;
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,12 +44,16 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
   const mode = product.product_mode || 'normal';
   const showChooseButton = mode === 'combo' || mode === 'flavors' || product.has_options;
   const chooseLabel = mode === 'combo' ? 'Montar' : 'Escolher';
+  const effectiveAvailable = getEffectiveAvailability(product);
+  const availableStock = getAvailableStock(product);
+  const lowStockLabel = getLowStockLabel(product);
 
   const handleAdd = () => {
     if (mode === 'combo') { setComboOpen(true); return; }
     if (mode === 'flavors') { setFlavorOpen(true); return; }
     if (product.has_options) { setConfigOpen(true); return; }
-    for (let i = 0; i < quantity; i++) {
+    const quantityToAdd = availableStock !== null ? Math.min(quantity, availableStock) : quantity;
+    for (let i = 0; i < quantityToAdd; i++) {
       addItem({
         id: product.id,
         name: product.name,
@@ -54,6 +61,8 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
         image_url: product.image_url,
         is_preorder: product.is_preorder,
         preorder_days: product.preorder_days,
+        has_stock_control: product.has_stock_control,
+        stock_quantity: product.stock_quantity,
       });
     }
     setQuantity(1);
@@ -106,6 +115,12 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
                       <Clock className="h-3 w-3 flex-shrink-0" /> Encomenda — mín. {product.preorder_days} dia(s) de antecedência
                     </p>
                   )}
+
+                  {lowStockLabel && (
+                    <p className="flex items-center gap-1 text-xs text-warning">
+                      <AlertCircle className="h-3 w-3 flex-shrink-0" /> {lowStockLabel}
+                    </p>
+                  )}
                 </div>
 
                 {product.description && (
@@ -126,7 +141,7 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
               className="border-t border-border/70 bg-card px-5 pt-4 pb-6 overflow-hidden"
               style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
             >
-              {product.available ? (
+              {effectiveAvailable ? (
                 <div className="flex items-center gap-3 min-w-0 w-full">
                   {!showChooseButton && (
                     <div className="flex flex-shrink-0 items-center overflow-hidden rounded-full border border-border bg-muted/40">
@@ -134,11 +149,14 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
                         <Minus className="h-4 w-4" />
                       </Button>
                       <Input
-                        type="number" min={1} value={quantity}
-                        onChange={e => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 1) setQuantity(n); }}
+                        type="number" min={1} max={availableStock ?? undefined} value={quantity}
+                        onChange={e => {
+                          const n = parseInt(e.target.value, 10);
+                          if (!isNaN(n) && n >= 1) setQuantity(availableStock !== null ? Math.min(n, availableStock) : n);
+                        }}
                         className="h-11 w-12 rounded-none border-0 bg-transparent p-0 text-center text-sm font-bold [appearance:textfield] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
-                      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full p-0 hover:bg-primary/10" onClick={() => setQuantity(q => q + 1)}>
+                      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full p-0 hover:bg-primary/10" onClick={() => setQuantity(q => availableStock !== null ? Math.min(availableStock, q + 1) : q + 1)} disabled={availableStock !== null && quantity >= availableStock}>
                         <Plus className="h-4 w-4" />
                       </Button>
                     </div>

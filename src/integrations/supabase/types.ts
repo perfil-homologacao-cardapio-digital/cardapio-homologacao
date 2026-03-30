@@ -504,6 +504,7 @@ export type Database = {
           flavor_count: number | null
           flavor_price_rule: string | null
           has_options: boolean
+          has_stock_control: boolean
           id: string
           image_url: string | null
           is_preorder: boolean
@@ -514,6 +515,7 @@ export type Database = {
           price: number
           product_mode: string
           sort_order: number
+          stock_quantity: number
           updated_at: string
         }
         Insert: {
@@ -526,6 +528,7 @@ export type Database = {
           flavor_count?: number | null
           flavor_price_rule?: string | null
           has_options?: boolean
+          has_stock_control?: boolean
           id?: string
           image_url?: string | null
           is_preorder?: boolean
@@ -536,6 +539,7 @@ export type Database = {
           price?: number
           product_mode?: string
           sort_order?: number
+          stock_quantity?: number
           updated_at?: string
         }
         Update: {
@@ -548,6 +552,7 @@ export type Database = {
           flavor_count?: number | null
           flavor_price_rule?: string | null
           has_options?: boolean
+          has_stock_control?: boolean
           id?: string
           image_url?: string | null
           is_preorder?: boolean
@@ -558,6 +563,7 @@ export type Database = {
           price?: number
           product_mode?: string
           sort_order?: number
+          stock_quantity?: number
           updated_at?: string
         }
         Relationships: [

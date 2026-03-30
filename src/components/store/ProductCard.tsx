@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/format';
 import { useCart } from '@/lib/cart';
 import { cn } from '@/lib/utils';
+import { getAvailableStock, getEffectiveAvailability, getLowStockLabel } from '@/lib/stock';
 import { ProductConfigModal } from './ProductConfigModal';
 import { ComboConfigModal } from './ComboConfigModal';
 import { FlavorConfigModal } from './FlavorConfigModal';
@@ -26,6 +27,8 @@ interface ProductCardProps {
     combo_max_qty?: number | null;
     flavor_count?: number | null;
     flavor_price_rule?: string | null;
+    has_stock_control?: boolean;
+    stock_quantity?: number | null;
   };
   priority?: boolean;
 }
@@ -42,6 +45,9 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
   const handleImgLoad = useCallback(() => setImgLoaded(true), []);
 
   const mode = product.product_mode || 'normal';
+  const effectiveAvailable = getEffectiveAvailability(product);
+  const availableStock = getAvailableStock(product);
+  const lowStockLabel = getLowStockLabel(product);
 
   const handleAdd = () => {
     if (mode === 'combo') {
@@ -56,7 +62,8 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
       setConfigOpen(true);
       return;
     }
-    for (let i = 0; i < quantity; i++) {
+    const quantityToAdd = availableStock !== null ? Math.min(quantity, availableStock) : quantity;
+    for (let i = 0; i < quantityToAdd; i++) {
       addItem({
         id: product.id,
         name: product.name,
@@ -64,6 +71,8 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
         image_url: product.image_url,
         is_preorder: product.is_preorder,
         preorder_days: product.preorder_days,
+        has_stock_control: product.has_stock_control,
+        stock_quantity: product.stock_quantity,
       });
     }
     setQuantity(1);
@@ -72,7 +81,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
   const handleQuantityChange = (value: string) => {
     const num = parseInt(value, 10);
     if (!isNaN(num) && num >= 1) {
-      setQuantity(num);
+      setQuantity(availableStock !== null ? Math.min(num, availableStock) : num);
     } else if (value === '') {
       setQuantity(1);
     }
@@ -85,7 +94,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
     <>
       <div className={cn(
         "group relative flex gap-3 p-3 rounded-xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-all overflow-hidden",
-        !product.available && "opacity-60"
+        !effectiveAvailable && "opacity-60"
       )}>
         <div className="relative flex-shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-lg overflow-hidden bg-muted">
           {product.image_url && !imgError ? (
@@ -138,12 +147,17 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
                 <AlertCircle className="h-3 w-3" /> Mín. {product.preorder_days} dia(s) de antecedência
               </p>
             )}
+            {lowStockLabel && (
+              <p className="text-xs text-warning flex items-center gap-1 mt-1">
+                <AlertCircle className="h-3 w-3" /> {lowStockLabel}
+              </p>
+            )}
           </div>
           <div className="flex flex-col mt-2 gap-1.5 min-w-0">
             <span className="text-base font-extrabold text-primary">
               {mode === 'combo' ? 'Monte o seu' : formatCurrency(product.price)}
             </span>
-            {product.available ? (
+            {effectiveAvailable ? (
               showChooseButton ? (
                 <div className="flex justify-end">
                   <Button
@@ -161,11 +175,11 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
                       <Minus className="h-3 w-3" />
                     </Button>
                     <Input
-                      type="number" min={1} value={quantity}
+                      type="number" min={1} max={availableStock ?? undefined} value={quantity}
                       onChange={e => handleQuantityChange(e.target.value)}
                       className="h-7 w-9 text-center text-xs font-bold border-0 bg-transparent p-0 rounded-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     />
-                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-full p-0 hover:bg-primary/10" onClick={() => setQuantity(q => q + 1)}>
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-full p-0 hover:bg-primary/10" onClick={() => setQuantity(q => availableStock !== null ? Math.min(availableStock, q + 1) : q + 1)} disabled={availableStock !== null && quantity >= availableStock}>
                       <Plus className="h-3 w-3" />
                     </Button>
                   </div>

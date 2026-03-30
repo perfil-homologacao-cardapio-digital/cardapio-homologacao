@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useCart, type CartItem } from '@/lib/cart';
 import { useStoreOpen } from '@/hooks/useStoreOpen';
 import { formatCurrency } from '@/lib/format';
+import { normalizeStockQuantity } from '@/lib/stock';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 
@@ -101,6 +102,14 @@ function CartContents({ items, updateQuantity, removeItem, subtotal }: {
   return (
     <div className="space-y-3 flex-1 overflow-y-auto">
       {items.map(item => (
+        (() => {
+          const totalForProduct = items.reduce((sum, current) => current.id === item.id ? sum + current.quantity : sum, 0);
+          const maxStock = item.has_stock_control ? normalizeStockQuantity(item.stock_quantity) : null;
+          const otherQty = totalForProduct - item.quantity;
+          const maxForLine = maxStock !== null ? Math.max(0, maxStock - otherQty) : null;
+          const plusDisabled = maxForLine !== null && item.quantity >= maxForLine;
+
+          return (
         <div key={item.cartKey} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate">{item.name}</p>
@@ -131,13 +140,18 @@ function CartContents({ items, updateQuantity, removeItem, subtotal }: {
               </div>
             )}
             <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
+            {item.has_stock_control && maxStock !== null && maxStock <= 5 && (
+              <p className="text-[10px] text-warning mt-0.5">
+                {maxStock === 1 ? 'Última unidade em estoque' : `Últimas ${maxStock} unidades em estoque`}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <Button variant="outline" size="icon" className="h-7 w-7 rounded-full" onClick={() => updateQuantity(item.cartKey!, item.quantity - 1)}>
               <Minus className="h-3 w-3" />
             </Button>
             <span className="text-sm font-bold w-5 text-center">{item.quantity}</span>
-            <Button variant="outline" size="icon" className="h-7 w-7 rounded-full" onClick={() => updateQuantity(item.cartKey!, item.quantity + 1)}>
+            <Button variant="outline" size="icon" className="h-7 w-7 rounded-full" onClick={() => updateQuantity(item.cartKey!, item.quantity + 1)} disabled={plusDisabled}>
               <Plus className="h-3 w-3" />
             </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeItem(item.cartKey!)}>
@@ -146,6 +160,8 @@ function CartContents({ items, updateQuantity, removeItem, subtotal }: {
           </div>
           <span className="text-sm font-bold w-16 text-right">{formatCurrency(item.price * item.quantity)}</span>
         </div>
+          );
+        })()
       ))}
       <div className="flex justify-between pt-2 font-bold">
         <span>Subtotal</span>

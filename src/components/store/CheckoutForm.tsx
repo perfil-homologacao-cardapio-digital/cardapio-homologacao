@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, Component, ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCart } from '@/lib/cart';
 import { useSettings } from '@/hooks/useSettings';
 import { useStoreOpen } from '@/hooks/useStoreOpen';
 import { formatCurrency } from '@/lib/format';
+import { getEffectiveAvailability, normalizeStockQuantity } from '@/lib/stock';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const { items, subtotal, clearCart, hasPreorderItems } = useCart();
+  const queryClient = useQueryClient();
   const { data: settings } = useSettings();
   const freeDelivery = settings?.free_delivery === 'true';
   const allowPickup = settings?.allow_pickup === 'true';
@@ -276,6 +278,47 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       }
     }
 
+    const quantityByProduct = items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.id] = (acc[item.id] || 0) + item.quantity;
+      return acc;
+    }, {});
+
+    const stockControlledIds = Array.from(
+      new Set(items.filter(item => item.has_stock_control).map(item => item.id))
+    );
+
+    if (stockControlledIds.length > 0) {
+      const { data: liveProducts, error: liveProductsError } = await supabase
+        .from('products')
+        .select('id, name, available, has_stock_control, stock_quantity')
+        .in('id', stockControlledIds);
+
+      if (liveProductsError) {
+        toast({ title: 'Erro ao validar estoque', description: 'Tente novamente em instantes.', variant: 'destructive' });
+        return;
+      }
+
+      const unavailableProduct = (liveProducts || []).find((product) => {
+        if (!product.has_stock_control) return false;
+        const requested = quantityByProduct[product.id] || 0;
+        const currentStock = normalizeStockQuantity(product.stock_quantity);
+        return !getEffectiveAvailability(product) || requested > currentStock;
+      });
+
+      if (unavailableProduct) {
+        const currentStock = normalizeStockQuantity(unavailableProduct.stock_quantity);
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        toast({
+          title: 'Estoque indisponível',
+          description: currentStock <= 0
+            ? `${unavailableProduct.name} está sem estoque no momento.`
+            : `Quantidade indisponível para ${unavailableProduct.name}. Restam ${currentStock} unidade(s).`,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     setSubmitting(true);
     
     let orderPayload: any = null;
@@ -311,17 +354,57 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         },
       });
 
-      if (createErr) throw createErr;
-      if ((created as any)?.error) throw new Error((created as any).error);
+      // Extract error message from edge function response (handles non-2xx status)
+      let edgeFunctionError: string | null = null;
+      if (createErr) {
+        // Try to extract message from the response body
+        try {
+          if (typeof createErr.context === 'object' && createErr.context) {
+            const ctx = createErr.context as any;
+            if (ctx.error) edgeFunctionError = String(ctx.error);
+            else if (ctx.message) edgeFunctionError = String(ctx.message);
+          }
+        } catch {}
+        if (!edgeFunctionError) edgeFunctionError = createErr.message || 'Erro ao criar pedido';
+      }
+      if (!edgeFunctionError && (created as any)?.error) {
+        edgeFunctionError = String((created as any).error);
+      }
+      if (edgeFunctionError) throw new Error(edgeFunctionError);
 
       const orderNumber = (created as any)?.order?.order_number;
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       setSuccessData({ orderNumber, orderPayload, sentItems: [...items] });
       clearCart();
       setSuccess(true);
     } catch (err: any) {
+      const rawMessage = String(err?.message || 'Erro desconhecido');
+      const normalizedMessage = rawMessage.toLowerCase();
+      const isStockError = normalizedMessage.includes('estoque')
+        || normalizedMessage.includes('indisponível')
+        || normalizedMessage.includes('indisponivel')
+        || normalizedMessage.includes('foi alterado agora')
+        || normalizedMessage.includes('non-2xx');
+
+      if (isStockError) {
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        let friendlyMessage: string;
+        if (normalizedMessage.includes('insuficiente')) {
+          friendlyMessage = rawMessage;
+        } else if (normalizedMessage.includes('sem estoque') || normalizedMessage.includes('indisponível') || normalizedMessage.includes('indisponivel')) {
+          friendlyMessage = rawMessage;
+        } else if (normalizedMessage.includes('foi alterado agora')) {
+          friendlyMessage = 'As últimas unidades acabaram de ser vendidas. Atualize seu carrinho e tente novamente.';
+        } else {
+          friendlyMessage = 'Poxa, esse produto acabou de esgotar. Atualize seu carrinho e tente novamente.';
+        }
+        toast({ title: '😔 Estoque esgotado', description: friendlyMessage, variant: 'destructive' });
+        return;
+      }
+
       setDebugError({
         error: {
-          message: err.message || 'Erro desconhecido',
+          message: rawMessage,
           details: err.details || null,
           hint: err.hint || null,
           code: err.code || null,
@@ -329,7 +412,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         },
         payload: orderPayload,
       });
-      toast({ title: 'Erro ao enviar pedido', description: err.message, variant: 'destructive' });
+      toast({ title: 'Erro ao enviar pedido', description: rawMessage, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }

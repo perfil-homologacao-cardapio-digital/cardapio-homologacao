@@ -18,6 +18,8 @@ interface ProductConfigModalProps {
     image_url: string | null;
     is_preorder: boolean;
     preorder_days: number | null;
+    has_stock_control?: boolean;
+    stock_quantity?: number | null;
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -158,6 +160,8 @@ export function ProductConfigModal({ product, open, onOpenChange }: ProductConfi
       image_url: product.image_url,
       is_preorder: product.is_preorder,
       preorder_days: product.preorder_days,
+      has_stock_control: product.has_stock_control,
+      stock_quantity: product.stock_quantity,
       selections: itemSelections,
     });
 

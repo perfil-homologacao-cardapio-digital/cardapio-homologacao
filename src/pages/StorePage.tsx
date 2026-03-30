@@ -8,6 +8,7 @@ import { ProductCard } from '@/components/store/ProductCard';
 import { CartDrawer, CartSidebar } from '@/components/store/CartDrawer';
 import { CheckoutForm } from '@/components/store/CheckoutForm';
 import { OrderTracker } from '@/components/store/OrderTracker';
+import { getEffectiveAvailability } from '@/lib/stock';
 
 function StoreContent() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -29,7 +30,10 @@ function StoreContent() {
     queryFn: async () => {
       const { data, error } = await supabase.from('products').select('*').order('sort_order');
       if (error) throw error;
-      return data;
+      return (data || []).map(product => ({
+        ...product,
+        available: getEffectiveAvailability(product),
+      }));
     },
   });
 

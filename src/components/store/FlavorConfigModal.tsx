@@ -22,6 +22,8 @@ interface FlavorConfigModalProps {
     flavor_count: number | null;
     flavor_price_rule: string | null;
     pizza_has_stuffed_crust?: boolean;
+    has_stock_control?: boolean;
+    stock_quantity?: number | null;
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -137,6 +139,8 @@ export function FlavorConfigModal({ product, open, onOpenChange }: FlavorConfigM
       image_url: product.image_url,
       is_preorder: product.is_preorder,
       preorder_days: product.preorder_days,
+      has_stock_control: product.has_stock_control,
+      stock_quantity: product.stock_quantity,
       selections,
     });
 

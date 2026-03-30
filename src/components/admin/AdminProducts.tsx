@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertic
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/imageUtils';
+import { getEffectiveAvailability, normalizeStockQuantity } from '@/lib/stock';
 import {
   DndContext,
   closestCenter,
@@ -53,9 +54,11 @@ interface ProductForm {
   flavor_count: string;
   flavor_price_rule: string;
   pizza_has_stuffed_crust: boolean;
+  has_stock_control: boolean;
+  stock_quantity: string;
 }
 
-const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false };
+const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false, has_stock_control: false, stock_quantity: '0' };
 
 const ITEMS_PER_PAGE = 7;
 
@@ -82,6 +85,7 @@ function SortableProductItem({
     if (!catId) return null;
     return categories.find(c => c.id === catId)?.name || null;
   };
+  const effectiveAvailable = getEffectiveAvailability(product);
 
   return (
     <div ref={setNodeRef} style={style} className="flex items-center gap-3 bg-card border border-border/50 rounded-xl p-3">
@@ -100,7 +104,8 @@ function SortableProductItem({
         </p>
         <p className="text-xs text-muted-foreground">
           {formatCurrency(product.price)}
-          {!product.available && ' • Indisponível'}
+          {!effectiveAvailable && ' • Indisponível'}
+          {product.has_stock_control && <span className="ml-1">• Estoque: {product.stock_quantity}</span>}
           {getCategoryName(product.category_id) && <span className="ml-1">• {getCategoryName(product.category_id)}</span>}
         </p>
       </div>
@@ -119,6 +124,21 @@ export function AdminProducts() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [page, setPage] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Realtime: auto-refresh products when stock changes via sales
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-products-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['products'] });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -162,12 +182,13 @@ export function AdminProducts() {
     mutationFn: async () => {
       const isCombo = form.product_mode === 'combo';
       const isFlavors = form.product_mode === 'flavors';
+      const stockQuantity = form.has_stock_control ? normalizeStockQuantity(form.stock_quantity) : 0;
       const payload: any = {
         name: form.name.trim(),
         description: form.description.trim() || null,
         price: parseFloat(form.price) || 0,
         category_id: form.category_id || null,
-        available: form.available,
+        available: form.has_stock_control ? stockQuantity > 0 : form.available,
         is_preorder: form.is_preorder,
         preorder_days: form.is_preorder ? parseInt(form.preorder_days) || 0 : 0,
         image_url: form.image_url || null,
@@ -178,6 +199,8 @@ export function AdminProducts() {
         flavor_count: isFlavors ? (parseInt(form.flavor_count) || 2) : null,
         flavor_price_rule: isFlavors ? form.flavor_price_rule : 'most_expensive',
         pizza_has_stuffed_crust: isFlavors ? form.pizza_has_stuffed_crust : false,
+        has_stock_control: form.has_stock_control,
+        stock_quantity: stockQuantity,
       };
       if (editing) {
         const { error } = await supabase.from('products').update(payload).eq('id', editing);
@@ -230,6 +253,8 @@ export function AdminProducts() {
       flavor_count: String((p as any).flavor_count || 2),
       flavor_price_rule: (p as any).flavor_price_rule || 'most_expensive',
       pizza_has_stuffed_crust: (p as any).pizza_has_stuffed_crust || false,
+      has_stock_control: (p as any).has_stock_control || false,
+      stock_quantity: String((p as any).stock_quantity || 0),
     });
     setEditing(p.id);
     setOpen(true);
@@ -362,14 +387,30 @@ export function AdminProducts() {
               </div>
               <div className="flex items-center justify-between">
                 <Label>Disponível</Label>
-                <Switch checked={form.available} onCheckedChange={v => set('available', v)} />
+                <Switch checked={form.has_stock_control ? normalizeStockQuantity(form.stock_quantity) > 0 : form.available} onCheckedChange={v => set('available', v)} disabled={form.has_stock_control} />
               </div>
+              {form.has_stock_control && (
+                <p className="text-xs text-muted-foreground -mt-2">Com estoque ativo, a disponibilidade é sincronizada automaticamente pela quantidade em estoque.</p>
+              )}
               <div className="flex items-center justify-between">
                 <Label>Encomenda</Label>
                 <Switch checked={form.is_preorder} onCheckedChange={v => set('is_preorder', v)} />
               </div>
               {form.is_preorder && (
                 <div><Label>Dias de antecedência</Label><Input type="number" value={form.preorder_days} onChange={e => set('preorder_days', e.target.value)} className="rounded-xl" /></div>
+              )}
+
+              {/* Stock control */}
+              <div className="flex items-center justify-between">
+                <Label>Produto com estoque</Label>
+                <Switch checked={form.has_stock_control} onCheckedChange={v => set('has_stock_control', v)} />
+              </div>
+              {form.has_stock_control && (
+                <div>
+                  <Label>Quantidade em estoque *</Label>
+                  <Input type="number" min={0} value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)} className="rounded-xl" placeholder="Ex: 50" />
+                  <p className="text-xs text-muted-foreground mt-1">Ao zerar, o produto ficará indisponível automaticamente.</p>
+                </div>
               )}
 
               {/* Normal mode: has_options toggle */}
