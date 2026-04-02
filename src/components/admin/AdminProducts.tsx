@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/imageUtils';
@@ -68,12 +68,14 @@ function SortableProductItem({
   getModeLabel,
   onEdit,
   onDelete,
+  onCopyLink,
 }: {
   product: any;
   categories: any[];
   getModeLabel: (mode: string) => string | null;
   onEdit: () => void;
   onDelete: () => void;
+  onCopyLink: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = {
@@ -109,6 +111,7 @@ function SortableProductItem({
           {getCategoryName(product.category_id) && <span className="ml-1">• {getCategoryName(product.category_id)}</span>}
         </p>
       </div>
+      <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link do produto" onClick={onCopyLink}><Link2 className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
     </div>
@@ -525,6 +528,13 @@ export function AdminProducts() {
                 getModeLabel={getModeLabel}
                 onEdit={() => handleEdit(p)}
                 onDelete={() => setDeleteId(p.id)}
+                onCopyLink={() => {
+                  const baseUrl = window.location.origin;
+                  const link = `${baseUrl}/?product=${p.id}`;
+                  navigator.clipboard.writeText(link).then(() => {
+                    toast({ title: 'Link copiado!', description: 'O link do produto foi copiado para a área de transferência.' });
+                  });
+                }}
               />
             ))}
             {filteredProducts.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nenhum produto encontrado</p>}
