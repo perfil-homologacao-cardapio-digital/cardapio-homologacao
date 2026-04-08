@@ -499,6 +499,7 @@ export type Database = {
           category_id: string | null
           combo_max_qty: number | null
           combo_min_qty: number | null
+          combo_price_mode: string
           created_at: string
           description: string | null
           flavor_count: number | null
@@ -523,6 +524,7 @@ export type Database = {
           category_id?: string | null
           combo_max_qty?: number | null
           combo_min_qty?: number | null
+          combo_price_mode?: string
           created_at?: string
           description?: string | null
           flavor_count?: number | null
@@ -547,6 +549,7 @@ export type Database = {
           category_id?: string | null
           combo_max_qty?: number | null
           combo_min_qty?: number | null
+          combo_price_mode?: string
           created_at?: string
           description?: string | null
           flavor_count?: number | null

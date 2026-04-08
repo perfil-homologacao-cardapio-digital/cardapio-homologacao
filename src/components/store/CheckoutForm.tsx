@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Component, ReactNode } from 'react';
+import { useEffect, useMemo, useState, Component, ReactNode, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCart } from '@/lib/cart';
@@ -14,8 +14,10 @@ import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft, CheckCircle2, Loader2, Bug, Clock, MessageCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Bug, Clock, MessageCircle, Copy, Check, QrCode } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { generatePixPayload } from '@/lib/pixPayload';
+import QRCode from 'qrcode';
 
 // Error Boundary to prevent white screen
 class CheckoutErrorBoundary extends Component<{ children: ReactNode; onBack: () => void }, { hasError: boolean }> {
@@ -70,6 +72,75 @@ function safeNum(val: unknown, fallback = 0): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/** Pix payment block with EMV payload + QR Code */
+function PixPaymentBlock({ pixKey, recipientName, recipientCity, total }: { pixKey: string; recipientName: string; recipientCity: string; total: number }) {
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  const pixPayload = useMemo(() => generatePixPayload({
+    pixKey,
+    recipientName,
+    recipientCity,
+    amount: total,
+  }), [pixKey, recipientName, recipientCity, total]);
+
+  useEffect(() => {
+    if (showQr && pixPayload) {
+      QRCode.toDataURL(pixPayload, { width: 256, margin: 2 })
+        .then(setQrDataUrl)
+        .catch(() => setQrDataUrl(''));
+    }
+  }, [showQr, pixPayload]);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(pixPayload);
+    setCopied(true);
+    toast({ title: 'Código Pix copiado!' });
+    setTimeout(() => setCopied(false), 3000);
+  }, [pixPayload]);
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <div className="text-center space-y-1">
+        <p className="text-base font-bold text-foreground">Pague via Pix</p>
+        <p className="text-xs text-muted-foreground">
+          Copie o código Pix abaixo, faça o pagamento no app do seu banco e depois envie o comprovante pelo WhatsApp junto com seu pedido.
+        </p>
+      </div>
+
+      <div className="bg-accent/50 rounded-lg px-4 py-3 text-center">
+        <p className="text-xs text-muted-foreground">Valor</p>
+        <p className="text-2xl font-extrabold text-primary">{formatCurrency(total)}</p>
+      </div>
+
+      <Button type="button" className="w-full rounded-xl h-11 font-bold gap-2" onClick={handleCopy}>
+        {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+        {copied ? 'Código copiado!' : 'Copiar código Pix'}
+      </Button>
+
+      <p className="text-xs text-muted-foreground text-center break-all">
+        Chave Pix: <span className="font-mono text-foreground">{pixKey}</span>
+      </p>
+
+      <button
+        type="button"
+        className="w-full text-center text-xs text-primary hover:underline flex items-center justify-center gap-1"
+        onClick={() => setShowQr(prev => !prev)}
+      >
+        <QrCode className="h-3.5 w-3.5" />
+        {showQr ? 'Ocultar QR Code' : 'Exibir QR Code'}
+      </button>
+
+      {showQr && qrDataUrl && (
+        <div className="flex justify-center pt-2">
+          <img src={qrDataUrl} alt="QR Code Pix" className="w-56 h-56 rounded-lg border border-border" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CheckoutFormInner({ onBack }: CheckoutFormProps) {
@@ -133,6 +204,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const [successData, setSuccessData] = useState<{ orderNumber: number; orderPayload: any; sentItems: any[] } | null>(null);
   const [debugPayload, setDebugPayload] = useState<any>(null);
   const [debugError, setDebugError] = useState<any>(null);
+  
 
   const safeNeighborhoods = useMemo(
     () => Array.isArray(neighborhoods)
@@ -457,7 +529,9 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         }
       }
 
+      const isPix = orderPayload.payment_method === 'pix';
       const lines = [
+        ...(isPix ? ['💲 *Vou realizar o pagamento via Pix e em seguida enviar o comprovante.*', ''] : []),
         `🛒 *NOVO PEDIDO NO CARDÁPIO DIGITAL*`,
         ``,
         `Pedido: #${orderNumber || '---'}`,
@@ -717,6 +791,17 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           );
         })()}
 
+        {/* Delivery time estimate */}
+        {isDelivery && settings?.delivery_time_estimate && (
+          <div className="flex items-center gap-3 bg-accent/50 rounded-xl p-4 border border-border/50">
+            <Clock className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            <div>
+              <p className="text-sm text-muted-foreground">Tempo estimado de entrega</p>
+              <p className="text-sm font-semibold text-foreground">{settings.delivery_time_estimate}</p>
+            </div>
+          </div>
+        )}
+
         {/* 2. Name */}
         <div>
           <Label htmlFor="name">Nome completo *</Label>
@@ -904,6 +989,16 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           <div className="flex items-center gap-3 bg-warning/10 border border-warning/30 rounded-xl p-4">
             <span className="text-sm text-warning font-medium">Nosso pedido mínimo é de {formatCurrency(minOrderValue)}</span>
           </div>
+        )}
+
+        {/* Pix payment block */}
+        {form.payment_method === 'pix' && settings?.pix_key && settings?.pix_recipient_name && settings?.pix_recipient_city && (
+          <PixPaymentBlock
+            pixKey={settings.pix_key}
+            recipientName={settings.pix_recipient_name}
+            recipientCity={settings.pix_recipient_city}
+            total={safeNum(total)}
+          />
         )}
 
         <Button type="submit" disabled={submitting || !items.length || !canCheckout || !hasValidPaymentMethod || (minOrderEnabled && isDelivery && subtotal < minOrderValue)} className="w-full h-12 rounded-xl font-bold text-base">

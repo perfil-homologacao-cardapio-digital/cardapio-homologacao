@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, X, Upload } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/imageUtils';
 import { WeeklyScheduleEditor } from '@/components/admin/WeeklyScheduleEditor';
@@ -42,6 +43,10 @@ export function AdminSettings() {
     store_address_number: '',
     store_address_complement: '',
     store_neighborhood: '',
+    delivery_time_estimate: '',
+    pix_key: '',
+    pix_recipient_name: '',
+    pix_recipient_city: '',
   });
   const [schedule, setSchedule] = useState<WeeklySchedule>(() => parseSchedule(null));
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -71,6 +76,10 @@ export function AdminSettings() {
         store_address_number: settings.store_address_number || '',
         store_address_complement: settings.store_address_complement || '',
         store_neighborhood: settings.store_neighborhood || '',
+        delivery_time_estimate: settings.delivery_time_estimate || '',
+        pix_key: settings.pix_key || '',
+        pix_recipient_name: settings.pix_recipient_name || '',
+        pix_recipient_city: settings.pix_recipient_city || '',
       });
       setSchedule(parseSchedule(settings.weekly_schedule));
     }
@@ -101,6 +110,10 @@ export function AdminSettings() {
         { key: 'store_address_number', value: form.store_address_number },
         { key: 'store_address_complement', value: form.store_address_complement },
         { key: 'store_neighborhood', value: form.store_neighborhood },
+        { key: 'delivery_time_estimate', value: form.delivery_time_estimate },
+        { key: 'pix_key', value: form.pix_key },
+        { key: 'pix_recipient_name', value: form.pix_recipient_name },
+        { key: 'pix_recipient_city', value: form.pix_recipient_city },
         { key: 'weekly_schedule', value: JSON.stringify(schedule) },
       ];
       for (const entry of entries) {
@@ -182,6 +195,24 @@ export function AdminSettings() {
           </div>
           <div><Label>Bairro</Label><Input value={form.store_neighborhood} onChange={e => set('store_neighborhood', e.target.value)} placeholder="Centro" className="rounded-xl" /></div>
         </div>
+
+        {/* Tempo de entrega */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-2">
+          <Label className="font-bold">🕐 Tempo de Entrega</Label>
+          <p className="text-xs text-muted-foreground">Tempo médio estimado para entregas</p>
+          <Select value={form.delivery_time_estimate || 'none'} onValueChange={v => set('delivery_time_estimate', v === 'none' ? '' : v)}>
+            <SelectTrigger className="rounded-xl">
+              <SelectValue placeholder="Selecione o tempo estimado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Não informar tempo de entrega</SelectItem>
+              {['20 min', '30 min', '40 min', '50 min', '60 min', '1h 15min', '1h 30min', '2h'].map(t => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div><Label>Notas de entrega</Label><Textarea value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} className="rounded-xl" /></div>
         <WeeklyScheduleEditor schedule={schedule} onChange={setSchedule} />
         <div className="flex items-center justify-between bg-accent/50 rounded-xl p-4">
@@ -218,6 +249,15 @@ export function AdminSettings() {
             <Input type="number" step="0.01" min="0" value={form.min_order_value} onChange={e => set('min_order_value', e.target.value)} placeholder="Ex: 25.00" className="rounded-xl" />
           </div>
         )}
+        {/* Chave Pix */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-3">
+          <Label className="font-bold">💲 Pagamento via Pix</Label>
+          <p className="text-xs text-muted-foreground">Dados usados para gerar o Pix copia e cola e o QR Code do pagamento.</p>
+          <div><Label>Chave Pix</Label><Input value={form.pix_key} onChange={e => set('pix_key', e.target.value)} placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória" className="rounded-xl" /></div>
+          <div><Label>Nome do recebedor</Label><Input value={form.pix_recipient_name} onChange={e => set('pix_recipient_name', e.target.value)} placeholder="Nome que aparece no Pix" className="rounded-xl" /></div>
+          <div><Label>Cidade do recebedor</Label><Input value={form.pix_recipient_city} onChange={e => set('pix_recipient_city', e.target.value)} placeholder="Ex: São Paulo" className="rounded-xl" /></div>
+        </div>
+
         {/* Formas de pagamento */}
         <div className="bg-accent/50 rounded-xl p-4 space-y-3">
           <Label className="font-bold">Formas de pagamento aceitas</Label>

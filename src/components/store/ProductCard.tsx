@@ -155,7 +155,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
           </div>
           <div className="flex flex-col mt-2 gap-1.5 min-w-0">
             <span className="text-base font-extrabold text-primary">
-              {mode === 'combo' ? 'Monte o seu' : formatCurrency(product.price)}
+              {mode === 'combo' && (product as any).combo_price_mode !== 'fixed' ? 'Monte o seu' : formatCurrency(product.price)}
             </span>
             {effectiveAvailable ? (
               showChooseButton ? (

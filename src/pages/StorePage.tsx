@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { CartProvider, useCart } from '@/lib/cart';
 import { StoreHeader } from '@/components/store/StoreHeader';
@@ -8,6 +9,7 @@ import { ProductCard } from '@/components/store/ProductCard';
 import { CartDrawer, CartSidebar } from '@/components/store/CartDrawer';
 import { CheckoutForm } from '@/components/store/CheckoutForm';
 import { OrderTracker } from '@/components/store/OrderTracker';
+import { ProductDetailModal } from '@/components/store/ProductDetailModal';
 import { getEffectiveAvailability } from '@/lib/stock';
 
 function StoreContent() {
@@ -15,6 +17,10 @@ function StoreContent() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [showTracker, setShowTracker] = useState(false);
   const { itemCount } = useCart();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [deepLinkProduct, setDeepLinkProduct] = useState<any>(null);
+  const [deepLinkOpen, setDeepLinkOpen] = useState(false);
+  const deepLinkHandled = useRef(false);
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
@@ -36,6 +42,28 @@ function StoreContent() {
       }));
     },
   });
+
+  // Deep link: open product modal from ?product=ID
+  useEffect(() => {
+    if (deepLinkHandled.current) return;
+    const productId = searchParams.get('product');
+    if (!productId || products.length === 0) return;
+
+    const found = products.find(p => p.id === productId);
+    if (found) {
+      setDeepLinkProduct(found);
+      setDeepLinkOpen(true);
+    }
+    // Remove param from URL to prevent re-trigger
+    deepLinkHandled.current = true;
+    searchParams.delete('product');
+    setSearchParams(searchParams, { replace: true });
+  }, [products, searchParams, setSearchParams]);
+
+  const handleDeepLinkClose = useCallback((open: boolean) => {
+    setDeepLinkOpen(open);
+    if (!open) setDeepLinkProduct(null);
+  }, []);
 
   const handleCheckout = useCallback(() => setShowCheckout(true), []);
   const handleBack = useCallback(() => setShowCheckout(false), []);
@@ -111,6 +139,13 @@ function StoreContent() {
       </div>
       <CartDrawer onCheckout={handleCheckout} />
       <OrderTracker open={showTracker} onOpenChange={setShowTracker} />
+      {deepLinkProduct && (
+        <ProductDetailModal
+          product={deepLinkProduct}
+          open={deepLinkOpen}
+          onOpenChange={handleDeepLinkClose}
+        />
+      )}
     </div>
   );
 }

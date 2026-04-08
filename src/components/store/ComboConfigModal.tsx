@@ -20,6 +20,7 @@ interface ComboConfigModalProps {
     combo_max_qty: number | null;
     has_stock_control?: boolean;
     stock_quantity?: number | null;
+    combo_price_mode?: string;
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,9 +51,10 @@ export function ComboConfigModal({ product, open, onOpenChange }: ComboConfigMod
 
   const minQty = product.combo_min_qty || 1;
   const maxQty = product.combo_max_qty || null;
+  const isFixedPrice = (product.combo_price_mode || 'items') === 'fixed';
 
   const totalQty = Object.values(quantities).reduce((s, q) => s + q, 0);
-  const totalPrice = comboItems.reduce((s, item) => s + (quantities[item.id] || 0) * Number(item.price), 0);
+  const totalPrice = isFixedPrice ? product.price : comboItems.reduce((s, item) => s + (quantities[item.id] || 0) * Number(item.price), 0);
 
   const canAdd = totalQty >= minQty && (!maxQty || totalQty <= maxQty);
 
@@ -132,7 +134,7 @@ export function ComboConfigModal({ product, open, onOpenChange }: ComboConfigMod
                   <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{formatCurrency(Number(item.price))}</p>
+                      {!isFixedPrice && <p className="text-xs text-muted-foreground">{formatCurrency(Number(item.price))}</p>}
                     </div>
                     <div className="flex items-center gap-1 border border-border rounded-full bg-muted/50">
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-full p-0" onClick={() => updateQty(item.id, -1)} disabled={qty === 0}>

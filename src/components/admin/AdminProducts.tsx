@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/imageUtils';
@@ -56,9 +56,10 @@ interface ProductForm {
   pizza_has_stuffed_crust: boolean;
   has_stock_control: boolean;
   stock_quantity: string;
+  combo_price_mode: string;
 }
 
-const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false, has_stock_control: false, stock_quantity: '0' };
+const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false, has_stock_control: false, stock_quantity: '0', combo_price_mode: 'items' };
 
 const ITEMS_PER_PAGE = 7;
 
@@ -68,12 +69,14 @@ function SortableProductItem({
   getModeLabel,
   onEdit,
   onDelete,
+  onCopyLink,
 }: {
   product: any;
   categories: any[];
   getModeLabel: (mode: string) => string | null;
   onEdit: () => void;
   onDelete: () => void;
+  onCopyLink: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = {
@@ -109,6 +112,7 @@ function SortableProductItem({
           {getCategoryName(product.category_id) && <span className="ml-1">• {getCategoryName(product.category_id)}</span>}
         </p>
       </div>
+      <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link do produto" onClick={onCopyLink}><Link2 className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
     </div>
@@ -201,6 +205,7 @@ export function AdminProducts() {
         pizza_has_stuffed_crust: isFlavors ? form.pizza_has_stuffed_crust : false,
         has_stock_control: form.has_stock_control,
         stock_quantity: stockQuantity,
+        combo_price_mode: isCombo ? form.combo_price_mode : 'items',
       };
       if (editing) {
         const { error } = await supabase.from('products').update(payload).eq('id', editing);
@@ -255,6 +260,7 @@ export function AdminProducts() {
       pizza_has_stuffed_crust: (p as any).pizza_has_stuffed_crust || false,
       has_stock_control: (p as any).has_stock_control || false,
       stock_quantity: String((p as any).stock_quantity || 0),
+      combo_price_mode: (p as any).combo_price_mode || 'items',
     });
     setEditing(p.id);
     setOpen(true);
@@ -351,12 +357,15 @@ export function AdminProducts() {
                 </Select>
               </div>
 
-              {/* Price — hidden hint for combo mode */}
+              {/* Price — conditional for combo mode */}
               <div>
-                <Label>Preço {form.product_mode === 'combo' ? '(não usado no combo)' : '*'}</Label>
-                <Input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className="rounded-xl" disabled={form.product_mode === 'combo'} />
-                {form.product_mode === 'combo' && (
-                  <p className="text-xs text-muted-foreground mt-1">No modo combo, o preço é calculado pela soma dos itens escolhidos.</p>
+                <Label>Preço {form.product_mode === 'combo' && form.combo_price_mode === 'items' ? '(não usado no combo)' : '*'}</Label>
+                <Input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className="rounded-xl" disabled={form.product_mode === 'combo' && form.combo_price_mode === 'items'} />
+                {form.product_mode === 'combo' && form.combo_price_mode === 'items' && (
+                  <p className="text-xs text-muted-foreground mt-1">No modo combo com preço nos itens, o preço é calculado pela soma dos itens escolhidos.</p>
+                )}
+                {form.product_mode === 'combo' && form.combo_price_mode === 'fixed' && (
+                  <p className="text-xs text-muted-foreground mt-1">Preço fixo do combo. Os itens servem apenas para composição.</p>
                 )}
                 {form.product_mode === 'flavors' && (
                   <p className="text-xs text-muted-foreground mt-1">No modo sabores, o preço é calculado pela regra de preço configurada abaixo.</p>
@@ -425,6 +434,16 @@ export function AdminProducts() {
               {form.product_mode === 'combo' && (
                 <div className="space-y-3 border border-border rounded-xl p-4 bg-muted/30">
                   <h4 className="font-bold text-sm">Configuração do combo</h4>
+                  <div>
+                    <Label className="text-xs">Precificação do Combo</Label>
+                    <Select value={form.combo_price_mode} onValueChange={v => set('combo_price_mode', v)}>
+                      <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Preço Fechado</SelectItem>
+                        <SelectItem value="items">Preço nos Itens</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">Quantidade mínima *</Label>
@@ -480,7 +499,7 @@ export function AdminProducts() {
             {/* Combo items editor — only for existing combo products */}
             {editing && form.product_mode === 'combo' && (
               <div className="mt-4">
-                <ComboItemsEditor productId={editing} />
+                <ComboItemsEditor productId={editing} comboPriceMode={form.combo_price_mode} />
               </div>
             )}
 
@@ -525,6 +544,13 @@ export function AdminProducts() {
                 getModeLabel={getModeLabel}
                 onEdit={() => handleEdit(p)}
                 onDelete={() => setDeleteId(p.id)}
+                onCopyLink={() => {
+                  const baseUrl = window.location.origin;
+                  const link = `${baseUrl}/?product=${p.id}`;
+                  navigator.clipboard.writeText(link).then(() => {
+                    toast({ title: 'Link copiado!', description: 'O link do produto foi copiado para a área de transferência.' });
+                  });
+                }}
               />
             ))}
             {filteredProducts.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nenhum produto encontrado</p>}
