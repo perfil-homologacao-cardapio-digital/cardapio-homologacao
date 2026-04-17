@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_available: boolean
           name: string
           sort_order: number
           updated_at: string
@@ -25,6 +26,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_available?: boolean
           name: string
           sort_order?: number
           updated_at?: string
@@ -32,6 +34,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_available?: boolean
           name?: string
           sort_order?: number
           updated_at?: string
@@ -399,6 +402,7 @@ export type Database = {
       product_option_groups: {
         Row: {
           created_at: string
+          group_kind: string
           id: string
           is_active: boolean
           max_select: number
@@ -414,6 +418,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          group_kind?: string
           id?: string
           is_active?: boolean
           max_select?: number
@@ -429,6 +434,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          group_kind?: string
           id?: string
           is_active?: boolean
           max_select?: number
@@ -455,6 +461,7 @@ export type Database = {
       product_options: {
         Row: {
           created_at: string
+          description: string | null
           group_id: string
           id: string
           is_active: boolean
@@ -465,6 +472,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          description?: string | null
           group_id: string
           id?: string
           is_active?: boolean
@@ -475,6 +483,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          description?: string | null
           group_id?: string
           id?: string
           is_active?: boolean
@@ -506,6 +515,7 @@ export type Database = {
           flavor_price_rule: string | null
           has_options: boolean
           has_stock_control: boolean
+          has_variations: boolean
           id: string
           image_url: string | null
           is_preorder: boolean
@@ -514,6 +524,7 @@ export type Database = {
           pizza_has_stuffed_crust: boolean
           preorder_days: number | null
           price: number
+          price_display_mode: string
           product_mode: string
           sort_order: number
           stock_quantity: number
@@ -531,6 +542,7 @@ export type Database = {
           flavor_price_rule?: string | null
           has_options?: boolean
           has_stock_control?: boolean
+          has_variations?: boolean
           id?: string
           image_url?: string | null
           is_preorder?: boolean
@@ -539,6 +551,7 @@ export type Database = {
           pizza_has_stuffed_crust?: boolean
           preorder_days?: number | null
           price?: number
+          price_display_mode?: string
           product_mode?: string
           sort_order?: number
           stock_quantity?: number
@@ -556,6 +569,7 @@ export type Database = {
           flavor_price_rule?: string | null
           has_options?: boolean
           has_stock_control?: boolean
+          has_variations?: boolean
           id?: string
           image_url?: string | null
           is_preorder?: boolean
@@ -564,6 +578,7 @@ export type Database = {
           pizza_has_stuffed_crust?: boolean
           preorder_days?: number | null
           price?: number
+          price_display_mode?: string
           product_mode?: string
           sort_order?: number
           stock_quantity?: number

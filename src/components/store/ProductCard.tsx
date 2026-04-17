@@ -22,6 +22,7 @@ interface ProductCardProps {
     is_preorder: boolean;
     preorder_days: number | null;
     has_options: boolean;
+    has_variations?: boolean;
     product_mode?: string;
     combo_min_qty?: number | null;
     combo_max_qty?: number | null;
@@ -29,6 +30,7 @@ interface ProductCardProps {
     flavor_price_rule?: string | null;
     has_stock_control?: boolean;
     stock_quantity?: number | null;
+    price_display_mode?: string;
   };
   priority?: boolean;
 }
@@ -48,6 +50,8 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
   const effectiveAvailable = getEffectiveAvailability(product);
   const availableStock = getAvailableStock(product);
   const lowStockLabel = getLowStockLabel(product);
+  const hasVariations = (product as any).has_variations === true;
+  const needsConfig = product.has_options || hasVariations;
 
   const handleAdd = () => {
     if (mode === 'combo') {
@@ -58,7 +62,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
       setFlavorOpen(true);
       return;
     }
-    if (product.has_options) {
+    if (needsConfig) {
       setConfigOpen(true);
       return;
     }
@@ -87,7 +91,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
     }
   };
 
-  const showChooseButton = mode === 'combo' || mode === 'flavors' || product.has_options;
+  const showChooseButton = mode === 'combo' || mode === 'flavors' || needsConfig;
   const chooseLabel = mode === 'combo' ? 'Montar' : mode === 'flavors' ? 'Escolher' : 'Escolher';
 
   return (
@@ -155,7 +159,11 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
           </div>
           <div className="flex flex-col mt-2 gap-1.5 min-w-0">
             <span className="text-base font-extrabold text-primary">
-              {mode === 'combo' && (product as any).combo_price_mode !== 'fixed' ? 'Monte o seu' : formatCurrency(product.price)}
+              {mode === 'combo' && (product as any).combo_price_mode !== 'fixed'
+                ? 'Monte o seu'
+                : (product.price_display_mode === 'starting_from'
+                    ? <><span className="text-[10px] font-semibold text-muted-foreground mr-1">A partir de</span>{formatCurrency(product.price)}</>
+                    : formatCurrency(product.price))}
             </span>
             {effectiveAvailable ? (
               showChooseButton ? (
@@ -201,7 +209,7 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
         onOpenChange={setDetailOpen}
       />
 
-      {product.has_options && mode === 'normal' && (
+      {needsConfig && mode === 'normal' && (
         <ProductConfigModal
           product={product}
           open={configOpen}

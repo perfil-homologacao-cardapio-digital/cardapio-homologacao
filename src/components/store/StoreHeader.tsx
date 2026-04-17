@@ -13,10 +13,26 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
   const desc = settings?.business_description || '';
   const logoUrl = settings?.logo_url || '';
   const instagramUrl = settings?.instagram_url || '';
+  const bannerUrl = settings?.banner_url || '';
+  const hasBanner = !!bannerUrl;
 
   return (
-    <header className="relative overflow-hidden bg-gradient-to-br from-primary/10 via-accent to-primary/5">
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmOTczMTYiIGZpbGwtb3BhY2l0eT0iMC4wNCI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iNCIvPjwvZz48L2c+PC9zdmc+')] opacity-60" />
+    <header className={`relative overflow-hidden ${hasBanner ? 'bg-foreground' : 'bg-gradient-to-br from-primary/10 via-accent to-primary/5'}`}>
+      {hasBanner && (
+        <>
+          <img
+            src={bannerUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
+          />
+          <div className="absolute inset-0 bg-black/45" />
+        </>
+      )}
+      {!hasBanner && (
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmOTczMTYiIGZpbGwtb3BhY2l0eT0iMC4wNCI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iNCIvPjwvZz48L2c+PC9zdmc+')] opacity-60" />
+      )}
       <div className="relative container mx-auto px-4 py-8 md:py-12">
         {/* Mobile: centered vertical layout */}
         <div className="flex flex-col items-center text-center md:hidden">
@@ -39,11 +55,11 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
                   <ShoppingBag className="h-10 w-10 text-primary-foreground" />
                 </div>
               )}
-              <h1 className="text-2xl font-extrabold tracking-tight text-foreground font-display leading-tight">
+              <h1 className={`text-2xl font-extrabold tracking-tight font-display leading-tight ${hasBanner ? 'text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]' : 'text-foreground'}`}>
                 {name}
               </h1>
               {desc && (
-                <p className="text-sm text-muted-foreground mt-1 max-w-[280px]">{desc}</p>
+                <p className={`text-sm mt-1 max-w-[280px] ${hasBanner ? 'text-white/90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]' : 'text-muted-foreground'}`}>{desc}</p>
               )}
             </>
           )}
@@ -90,8 +106,8 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
                 </>
               ) : (
                 <>
-                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground font-display">{name}</h1>
-                  {desc && <p className="text-sm md:text-base text-muted-foreground mt-0.5">{desc}</p>}
+                  <h1 className={`text-2xl md:text-3xl font-extrabold tracking-tight font-display ${hasBanner ? 'text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]' : 'text-foreground'}`}>{name}</h1>
+                  {desc && <p className={`text-sm md:text-base mt-0.5 ${hasBanner ? 'text-white/90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]' : 'text-muted-foreground'}`}>{desc}</p>}
                 </>
               )}
             </div>

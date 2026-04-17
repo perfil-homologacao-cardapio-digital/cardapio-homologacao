@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DynamicMeta } from "@/components/DynamicMeta";
+import { ThemeApplier } from "@/components/ThemeApplier";
 import StorePage from "./pages/StorePage";
 
 const AdminPage = lazy(() => import("./pages/AdminPage"));
@@ -28,6 +29,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <ThemeApplier />
         <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
           <Routes>
             <Route path="/" element={<StorePage />} />

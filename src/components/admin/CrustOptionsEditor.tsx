@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -8,32 +8,59 @@ import { Trash2, Loader2, GripVertical, Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface CrustOptionsEditorProps {
-  productId: string;
+  productId: string | null;
 }
 
-export function CrustOptionsEditor({ productId }: CrustOptionsEditorProps) {
+export interface CrustOptionsEditorHandle {
+  persist: (productId: string) => Promise<void>;
+  hasDraftData: () => boolean;
+}
+
+interface DraftItem { name: string; price: number; }
+
+export const CrustOptionsEditor = forwardRef<CrustOptionsEditorHandle, CrustOptionsEditorProps>(({ productId }, ref) => {
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: dbItems = [], isLoading } = useQuery({
     queryKey: ['crust-options', productId],
+    enabled: !!productId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('pizza_crust_options' as any)
         .select('*')
-        .eq('product_id', productId)
+        .eq('product_id', productId!)
         .order('sort_order');
       if (error) throw error;
       return data as any[];
     },
   });
 
+  const items: any[] = productId ? dbItems : draftItems;
+
+  useImperativeHandle(ref, () => ({
+    persist: async (newProductId: string) => {
+      if (draftItems.length === 0) return;
+      const { error } = await supabase.from('pizza_crust_options' as any).insert(
+        draftItems.map((it, idx) => ({
+          product_id: newProductId,
+          name: it.name.trim(),
+          price: it.price || 0,
+          sort_order: idx,
+        })) as any
+      );
+      if (error) throw error;
+    },
+    hasDraftData: () => draftItems.length > 0,
+  }), [draftItems]);
+
   const addItem = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('pizza_crust_options' as any).insert({
-        product_id: productId,
+        product_id: productId!,
         name: newName.trim(),
         price: parseFloat(newPrice) || 0,
         sort_order: items.length,
@@ -50,6 +77,17 @@ export function CrustOptionsEditor({ productId }: CrustOptionsEditorProps) {
     onError: (err: any) => toast({ title: 'Erro', description: err.message, variant: 'destructive' }),
   });
 
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    if (productId) addItem.mutate();
+    else {
+      setDraftItems(prev => [...prev, { name: newName.trim(), price: parseFloat(newPrice) || 0 }]);
+      setNewName('');
+      setNewPrice('');
+      setShowForm(false);
+    }
+  };
+
   const removeItem = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('pizza_crust_options' as any).delete().eq('id', id);
@@ -62,19 +100,27 @@ export function CrustOptionsEditor({ productId }: CrustOptionsEditorProps) {
     onError: (err: any) => toast({ title: 'Erro', description: err.message, variant: 'destructive' }),
   });
 
-  if (isLoading) return <Loader2 className="h-4 w-4 animate-spin" />;
+  const handleRemove = (item: any, idx: number) => {
+    if (productId) removeItem.mutate(item.id);
+    else setDraftItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  if (productId && isLoading) return <Loader2 className="h-4 w-4 animate-spin" />;
 
   return (
     <div className="space-y-3 border border-border rounded-xl p-4 bg-muted/30">
       <h4 className="font-bold text-sm">Opções de Borda Recheada</h4>
       <p className="text-xs text-muted-foreground">Cadastre os sabores de borda disponíveis para este produto.</p>
+      {!productId && (
+        <p className="text-[11px] text-muted-foreground">As opções serão salvas automaticamente ao criar o produto.</p>
+      )}
 
-      {items.map((item: any) => (
-        <div key={item.id} className="flex items-center gap-2 bg-card p-2 rounded-lg border border-border/50">
+      {items.map((item: any, idx: number) => (
+        <div key={item.id || `draft-${idx}`} className="flex items-center gap-2 bg-card p-2 rounded-lg border border-border/50">
           <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <span className="flex-1 text-sm font-medium truncate">{item.name}</span>
           <span className="text-xs text-muted-foreground">R$ {Number(item.price).toFixed(2)}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeItem.mutate(item.id)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemove(item, idx)}>
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
@@ -91,7 +137,7 @@ export function CrustOptionsEditor({ productId }: CrustOptionsEditorProps) {
             <Input type="number" step="0.01" value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="0.00" className="rounded-lg h-8 text-sm" />
           </div>
           <div className="flex gap-2">
-            <Button size="sm" className="h-8 rounded-lg flex-1" disabled={!newName.trim() || addItem.isPending} onClick={() => addItem.mutate()}>
+            <Button size="sm" className="h-8 rounded-lg flex-1" disabled={!newName.trim() || addItem.isPending} onClick={handleAdd}>
               {addItem.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Salvar'}
             </Button>
             <Button size="sm" variant="outline" className="h-8 rounded-lg" onClick={() => { setShowForm(false); setNewName(''); setNewPrice(''); }}>
@@ -106,4 +152,6 @@ export function CrustOptionsEditor({ productId }: CrustOptionsEditorProps) {
       )}
     </div>
   );
-}
+});
+
+CrustOptionsEditor.displayName = 'CrustOptionsEditor';

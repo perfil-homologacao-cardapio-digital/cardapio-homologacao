@@ -4,10 +4,10 @@
  */
 export async function compressImage(
   file: File,
-  maxSizeKB = 150,
-  maxWidth = 1200,
-  maxHeight = 1200,
-  initialQuality = 0.85
+  maxSizeKB = 50,
+  maxWidth = 1600,
+  maxHeight = 1600,
+  initialQuality = 0.82
 ): Promise<File> {
   return new Promise((resolve, reject) => {
     const img = new Image();

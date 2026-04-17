@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Pencil, Trash2, Loader2, GripVertical } from 'lucide-react';
@@ -30,10 +31,12 @@ function SortableCategoryItem({
   category,
   onEdit,
   onDelete,
+  onToggleAvailable,
 }: {
-  category: { id: string; name: string };
+  category: { id: string; name: string; is_available?: boolean };
   onEdit: () => void;
   onDelete: () => void;
+  onToggleAvailable: (v: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: category.id });
   const style = {
@@ -41,16 +44,23 @@ function SortableCategoryItem({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+  const isAvailable = category.is_available !== false;
 
   return (
     <div ref={setNodeRef} style={style} className="flex items-center justify-between bg-card border border-border/50 rounded-xl p-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none">
           <GripVertical className="h-4 w-4" />
         </button>
-        <span className="font-semibold text-sm">{category.name}</span>
+        <div className="flex flex-col min-w-0">
+          <span className="font-semibold text-sm truncate">{category.name}</span>
+          {!isAvailable && <span className="text-[10px] text-destructive font-semibold">Indisponível no cardápio</span>}
+        </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5" title={isAvailable ? 'Disponível' : 'Indisponível'}>
+          <Switch checked={isAvailable} onCheckedChange={onToggleAvailable} />
+        </div>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
       </div>
@@ -156,9 +166,22 @@ export function AdminCategories() {
             {categories.map(c => (
               <SortableCategoryItem
                 key={c.id}
-                category={c}
+                category={c as any}
                 onEdit={() => { setName(c.name); setEditing(c.id); setOpen(true); }}
                 onDelete={() => setDeleteId(c.id)}
+                onToggleAvailable={async (v) => {
+                  // Optimistic update
+                  queryClient.setQueryData(['categories'], (old: any[] = []) =>
+                    old.map(cat => cat.id === c.id ? { ...cat, is_available: v } : cat)
+                  );
+                  const { error } = await supabase.from('categories').update({ is_available: v } as any).eq('id', c.id);
+                  if (error) {
+                    toast({ title: 'Erro ao atualizar disponibilidade', description: error.message, variant: 'destructive' });
+                    queryClient.invalidateQueries({ queryKey: ['categories'] });
+                  } else {
+                    toast({ title: v ? 'Categoria disponível' : 'Categoria indisponível' });
+                  }
+                }}
               />
             ))}
             {categories.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nenhuma categoria cadastrada</p>}

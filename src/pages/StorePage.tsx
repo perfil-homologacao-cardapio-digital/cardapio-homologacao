@@ -70,8 +70,14 @@ function StoreContent() {
 
   const { groupedProducts, uncategorized, priorityIds } = useMemo(() => {
     const isAll = activeCategory === 'all';
-    const filtered = isAll ? products : products.filter(p => p.category_id === activeCategory);
-    const grouped = categories
+    // Categories marked as unavailable hide their products from the menu
+    const unavailableCatIds = new Set(
+      (categories as any[]).filter(c => c.is_available === false).map(c => c.id)
+    );
+    const visibleProducts = (products as any[]).filter(p => !p.category_id || !unavailableCatIds.has(p.category_id));
+    const filtered = isAll ? visibleProducts : visibleProducts.filter(p => p.category_id === activeCategory);
+    const visibleCategories = (categories as any[]).filter(c => c.is_available !== false);
+    const grouped = visibleCategories
       .map(cat => ({ ...cat, products: filtered.filter(p => p.category_id === cat.id) }))
       .filter(cat => cat.products.length > 0);
     const uncat = filtered.filter(p => !p.category_id);
@@ -91,7 +97,7 @@ function StoreContent() {
     <div className="min-h-screen bg-background">
       <StoreHeader onTrackOrder={() => setShowTracker(true)} />
       <CategoryNav
-        categories={categories}
+        categories={(categories as any[]).filter(c => c.is_available !== false)}
         active={activeCategory}
         onSelect={setActiveCategory}
       />

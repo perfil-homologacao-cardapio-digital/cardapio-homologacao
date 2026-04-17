@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2, Copy } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
 import { compressImage } from '@/lib/imageUtils';
@@ -33,10 +33,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
-import { ProductOptionGroupsEditor } from './ProductOptionGroupsEditor';
-import { ComboItemsEditor } from './ComboItemsEditor';
-import { FlavorItemsEditor } from './FlavorItemsEditor';
-import { CrustOptionsEditor } from './CrustOptionsEditor';
+import { ProductOptionGroupsEditor, ProductOptionGroupsEditorHandle } from './ProductOptionGroupsEditor';
+import { ProductVariationsEditor, ProductVariationsEditorHandle } from './ProductVariationsEditor';
+import { ComboItemsEditor, ComboItemsEditorHandle } from './ComboItemsEditor';
+import { FlavorItemsEditor, FlavorItemsEditorHandle } from './FlavorItemsEditor';
+import { CrustOptionsEditor, CrustOptionsEditorHandle } from './CrustOptionsEditor';
 
 interface ProductForm {
   name: string;
@@ -48,6 +49,7 @@ interface ProductForm {
   preorder_days: string;
   image_url: string;
   has_options: boolean;
+  has_variations: boolean;
   product_mode: string;
   combo_min_qty: string;
   combo_max_qty: string;
@@ -57,9 +59,10 @@ interface ProductForm {
   has_stock_control: boolean;
   stock_quantity: string;
   combo_price_mode: string;
+  price_display_mode: string;
 }
 
-const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false, has_stock_control: false, stock_quantity: '0', combo_price_mode: 'items' };
+const emptyForm: ProductForm = { name: '', description: '', price: '', category_id: '', available: true, is_preorder: false, preorder_days: '0', image_url: '', has_options: false, has_variations: false, product_mode: 'normal', combo_min_qty: '', combo_max_qty: '', flavor_count: '2', flavor_price_rule: 'most_expensive', pizza_has_stuffed_crust: false, has_stock_control: false, stock_quantity: '0', combo_price_mode: 'items', price_display_mode: 'fixed' };
 
 const ITEMS_PER_PAGE = 7;
 
@@ -70,6 +73,7 @@ function SortableProductItem({
   onEdit,
   onDelete,
   onCopyLink,
+  onDuplicate,
 }: {
   product: any;
   categories: any[];
@@ -77,6 +81,7 @@ function SortableProductItem({
   onEdit: () => void;
   onDelete: () => void;
   onCopyLink: () => void;
+  onDuplicate: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = {
@@ -113,6 +118,7 @@ function SortableProductItem({
         </p>
       </div>
       <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link do produto" onClick={onCopyLink}><Link2 className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar produto" onClick={onDuplicate}><Copy className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
     </div>
@@ -128,6 +134,15 @@ export function AdminProducts() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [page, setPage] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [duplicateId, setDuplicateId] = useState<string | null>(null);
+
+  // Refs to persist child editor drafts after creating a new product
+  const optionGroupsRef = useRef<ProductOptionGroupsEditorHandle>(null);
+  const comboChoiceGroupsRef = useRef<ProductOptionGroupsEditorHandle>(null);
+  const variationsRef = useRef<ProductVariationsEditorHandle>(null);
+  const comboItemsRef = useRef<ComboItemsEditorHandle>(null);
+  const flavorItemsRef = useRef<FlavorItemsEditorHandle>(null);
+  const crustOptionsRef = useRef<CrustOptionsEditorHandle>(null);
 
   // Realtime: auto-refresh products when stock changes via sales
   useEffect(() => {
@@ -197,6 +212,7 @@ export function AdminProducts() {
         preorder_days: form.is_preorder ? parseInt(form.preorder_days) || 0 : 0,
         image_url: form.image_url || null,
         has_options: form.product_mode === 'normal' ? form.has_options : false,
+        has_variations: form.product_mode === 'normal' ? form.has_variations : false,
         product_mode: form.product_mode,
         combo_min_qty: isCombo ? (parseInt(form.combo_min_qty) || 1) : null,
         combo_max_qty: isCombo && form.combo_max_qty ? (parseInt(form.combo_max_qty) || null) : null,
@@ -206,17 +222,47 @@ export function AdminProducts() {
         has_stock_control: form.has_stock_control,
         stock_quantity: stockQuantity,
         combo_price_mode: isCombo ? form.combo_price_mode : 'items',
+        price_display_mode: form.price_display_mode || 'fixed',
       };
+      let targetId: string;
       if (editing) {
         const { error } = await supabase.from('products').update(payload).eq('id', editing);
         if (error) throw error;
+        targetId = editing;
       } else {
-        const { error } = await supabase.from('products').insert(payload);
+        const { data, error } = await supabase.from('products').insert(payload).select('id').single();
         if (error) throw error;
+        targetId = data.id;
+      }
+      // Persist nested editors for both new and existing products
+      try {
+        if (form.product_mode === 'normal' && form.has_options) {
+          await optionGroupsRef.current?.persist(targetId);
+        }
+        if (form.product_mode === 'normal' && form.has_variations) {
+          await variationsRef.current?.persist(targetId);
+        }
+        if (form.product_mode === 'combo') {
+          await comboItemsRef.current?.persist(targetId);
+          await comboChoiceGroupsRef.current?.persist(targetId);
+        }
+        if (form.product_mode === 'flavors') {
+          await flavorItemsRef.current?.persist(targetId);
+          if (form.pizza_has_stuffed_crust) {
+            await crustOptionsRef.current?.persist(targetId);
+          }
+        }
+      } catch (err: any) {
+        toast({ title: editing ? 'Produto salvo, mas falhou ao salvar itens' : 'Produto criado, mas falhou ao salvar itens', description: err.message, variant: 'destructive' });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['combo-items'] });
+      queryClient.invalidateQueries({ queryKey: ['flavor-items'] });
+      queryClient.invalidateQueries({ queryKey: ['crust-options'] });
+      queryClient.invalidateQueries({ queryKey: ['product-option-groups'] });
+      queryClient.invalidateQueries({ queryKey: ['product-variations'] });
       setOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -241,6 +287,88 @@ export function AdminProducts() {
     },
   });
 
+  const duplicate = useMutation({
+    mutationFn: async (id: string) => {
+      // 1. Fetch original product
+      const { data: original, error: prodErr } = await supabase.from('products').select('*').eq('id', id).single();
+      if (prodErr) throw prodErr;
+      const { id: _omit, created_at, updated_at, ...rest } = original as any;
+      const newProductPayload = { ...rest, name: `${original.name} (cópia)` };
+      const { data: newProd, error: insErr } = await supabase.from('products').insert(newProductPayload).select('id').single();
+      if (insErr) throw insErr;
+      const newProductId = newProd.id;
+
+      // 2. Duplicate option groups + their options
+      const { data: groups } = await supabase.from('product_option_groups').select('*').eq('product_id', id);
+      if (groups && groups.length > 0) {
+        for (const g of groups as any[]) {
+          const { id: gid, created_at: _c, updated_at: _u, ...gRest } = g;
+          const { data: newGroup, error: gErr } = await supabase
+            .from('product_option_groups')
+            .insert({ ...gRest, product_id: newProductId })
+            .select('id')
+            .single();
+          if (gErr) throw gErr;
+          const { data: opts } = await supabase.from('product_options').select('*').eq('group_id', gid);
+          if (opts && opts.length > 0) {
+            const newOpts = (opts as any[]).map(({ id: _i, created_at: _c2, updated_at: _u2, group_id: _g, ...oRest }) => ({
+              ...oRest,
+              group_id: newGroup.id,
+            }));
+            const { error: oErr } = await supabase.from('product_options').insert(newOpts);
+            if (oErr) throw oErr;
+          }
+        }
+      }
+
+      // 3. Duplicate combo_items
+      const { data: comboItems } = await supabase.from('combo_items').select('*').eq('product_id', id);
+      if (comboItems && comboItems.length > 0) {
+        const newItems = (comboItems as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
+          ...rest,
+          product_id: newProductId,
+        }));
+        const { error } = await supabase.from('combo_items').insert(newItems);
+        if (error) throw error;
+      }
+
+      // 4. Duplicate flavor_items
+      const { data: flavorItems } = await supabase.from('flavor_items').select('*').eq('product_id', id);
+      if (flavorItems && flavorItems.length > 0) {
+        const newItems = (flavorItems as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
+          ...rest,
+          product_id: newProductId,
+        }));
+        const { error } = await supabase.from('flavor_items').insert(newItems);
+        if (error) throw error;
+      }
+
+      // 5. Duplicate pizza_crust_options
+      const { data: crustOpts } = await supabase.from('pizza_crust_options' as any).select('*').eq('product_id', id);
+      if (crustOpts && (crustOpts as any[]).length > 0) {
+        const newItems = (crustOpts as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
+          ...rest,
+          product_id: newProductId,
+        }));
+        const { error } = await supabase.from('pizza_crust_options' as any).insert(newItems as any);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['combo-items'] });
+      queryClient.invalidateQueries({ queryKey: ['flavor-items'] });
+      queryClient.invalidateQueries({ queryKey: ['crust-options'] });
+      queryClient.invalidateQueries({ queryKey: ['product-option-groups'] });
+      setDuplicateId(null);
+      toast({ title: 'Produto duplicado com sucesso' });
+    },
+    onError: (err: any) => {
+      setDuplicateId(null);
+      toast({ title: 'Erro ao duplicar', description: err.message, variant: 'destructive' });
+    },
+  });
+
   const handleEdit = (p: typeof products[0]) => {
     setForm({
       name: p.name,
@@ -252,6 +380,7 @@ export function AdminProducts() {
       preorder_days: String(p.preorder_days || 0),
       image_url: p.image_url || '',
       has_options: p.has_options,
+      has_variations: (p as any).has_variations || false,
       product_mode: (p as any).product_mode || 'normal',
       combo_min_qty: String((p as any).combo_min_qty || ''),
       combo_max_qty: String((p as any).combo_max_qty || ''),
@@ -261,6 +390,7 @@ export function AdminProducts() {
       has_stock_control: (p as any).has_stock_control || false,
       stock_quantity: String((p as any).stock_quantity || 0),
       combo_price_mode: (p as any).combo_price_mode || 'items',
+      price_display_mode: (p as any).price_display_mode || 'fixed',
     });
     setEditing(p.id);
     setOpen(true);
@@ -372,6 +502,18 @@ export function AdminProducts() {
                 )}
               </div>
 
+              {/* Price display mode — visual only */}
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <Label>Exibir como "A partir de"</Label>
+                  <span className="text-[11px] text-muted-foreground">Apenas visual. Não altera o cálculo.</span>
+                </div>
+                <Switch
+                  checked={form.price_display_mode === 'starting_from'}
+                  onCheckedChange={v => set('price_display_mode', v ? 'starting_from' : 'fixed')}
+                />
+              </div>
+
               <div>
                 <Label>Categoria</Label>
                 <Select value={form.category_id} onValueChange={v => set('category_id', v)}>
@@ -422,12 +564,24 @@ export function AdminProducts() {
                 </div>
               )}
 
-              {/* Normal mode: has_options toggle */}
+              {/* Normal mode: variations + addons toggles */}
               {form.product_mode === 'normal' && (
-                <div className="flex items-center justify-between">
-                  <Label>Possui adicionais/opções?</Label>
-                  <Switch checked={form.has_options} onCheckedChange={v => set('has_options', v)} />
-                </div>
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <Label>Possui variações? (tamanhos/versões)</Label>
+                      <span className="text-[11px] text-muted-foreground">Substituem o preço base.</span>
+                    </div>
+                    <Switch checked={form.has_variations} onCheckedChange={v => set('has_variations', v)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <Label>Possui adicionais/opções?</Label>
+                      <span className="text-[11px] text-muted-foreground">Somam ao preço.</span>
+                    </div>
+                    <Switch checked={form.has_options} onCheckedChange={v => set('has_options', v)} />
+                  </div>
+                </>
               )}
 
               {/* Combo mode config */}
@@ -489,31 +643,54 @@ export function AdminProducts() {
               </Button>
             </div>
 
-            {/* Option groups editor — only for existing normal products with has_options */}
-            {editing && form.product_mode === 'normal' && form.has_options && (
+            {/* Variations editor — render BEFORE addons */}
+            {form.product_mode === 'normal' && form.has_variations && (
               <div className="mt-4">
-                <ProductOptionGroupsEditor productId={editing} />
+                <ProductVariationsEditor ref={variationsRef} productId={editing} />
               </div>
             )}
 
-            {/* Combo items editor — only for existing combo products */}
-            {editing && form.product_mode === 'combo' && (
+            {/* Option groups editor — available immediately, even before save */}
+            {form.product_mode === 'normal' && form.has_options && (
               <div className="mt-4">
-                <ComboItemsEditor productId={editing} comboPriceMode={form.combo_price_mode} />
+                <ProductOptionGroupsEditor ref={optionGroupsRef} productId={editing} />
               </div>
             )}
 
-            {/* Flavor items editor — only for existing flavor products */}
-            {editing && form.product_mode === 'flavors' && (
+            {/* Combo items editor — available immediately, even before save */}
+            {form.product_mode === 'combo' && (
               <div className="mt-4">
-                <FlavorItemsEditor productId={editing} />
+                <ComboItemsEditor ref={comboItemsRef} productId={editing} comboPriceMode={form.combo_price_mode} />
               </div>
             )}
 
-            {/* Crust options editor — only for existing flavor products with stuffed crust enabled */}
-            {editing && form.product_mode === 'flavors' && form.pizza_has_stuffed_crust && (
+            {/* Combo choice blocks (e.g. "Escolha seu refrigerante") — admin section */}
+            {form.product_mode === 'combo' && (
               <div className="mt-4">
-                <CrustOptionsEditor productId={editing} />
+                <ProductOptionGroupsEditor
+                  ref={comboChoiceGroupsRef}
+                  productId={editing}
+                  groupKind="combo_choice"
+                  hidePrice
+                  title="Blocos de escolha do combo"
+                  newButtonLabel="Novo bloco de escolha"
+                  emptyText="Nenhum bloco de escolha. Use para deixar o cliente escolher itens (ex: refrigerante)."
+                  titlePlaceholder="Ex: Escolha seu refrigerante"
+                />
+              </div>
+            )}
+
+            {/* Flavor items editor — available immediately, even before save */}
+            {form.product_mode === 'flavors' && (
+              <div className="mt-4">
+                <FlavorItemsEditor ref={flavorItemsRef} productId={editing} />
+              </div>
+            )}
+
+            {/* Crust options editor — available immediately when stuffed crust is enabled */}
+            {form.product_mode === 'flavors' && form.pizza_has_stuffed_crust && (
+              <div className="mt-4">
+                <CrustOptionsEditor ref={crustOptionsRef} productId={editing} />
               </div>
             )}
           </DialogContent>
@@ -544,6 +721,7 @@ export function AdminProducts() {
                 getModeLabel={getModeLabel}
                 onEdit={() => handleEdit(p)}
                 onDelete={() => setDeleteId(p.id)}
+                onDuplicate={() => setDuplicateId(p.id)}
                 onCopyLink={() => {
                   const baseUrl = window.location.origin;
                   const link = `${baseUrl}/?product=${p.id}`;
@@ -593,6 +771,23 @@ export function AdminProducts() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => deleteId && remove.mutate(deleteId)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {remove.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Duplicate confirmation dialog */}
+      <AlertDialog open={!!duplicateId} onOpenChange={(open) => { if (!open) setDuplicateId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Duplicar produto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você realmente deseja duplicar este produto? Uma cópia completa será criada, incluindo adicionais, itens de combo, sabores e bordas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => duplicateId && duplicate.mutate(duplicateId)}>
+              {duplicate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

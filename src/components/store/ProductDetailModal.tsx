@@ -21,6 +21,7 @@ interface ProductDetailModalProps {
     is_preorder: boolean;
     preorder_days: number | null;
     has_options: boolean;
+    has_variations?: boolean;
     product_mode?: string;
     combo_min_qty?: number | null;
     combo_max_qty?: number | null;
@@ -42,7 +43,9 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
   const [imgError, setImgError] = useState(false);
 
   const mode = product.product_mode || 'normal';
-  const showChooseButton = mode === 'combo' || mode === 'flavors' || product.has_options;
+  const hasVariations = (product as any).has_variations === true;
+  const needsConfig = product.has_options || hasVariations;
+  const showChooseButton = mode === 'combo' || mode === 'flavors' || needsConfig;
   const chooseLabel = mode === 'combo' ? 'Montar' : 'Escolher';
   const effectiveAvailable = getEffectiveAvailability(product);
   const availableStock = getAvailableStock(product);
@@ -51,7 +54,7 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
   const handleAdd = () => {
     if (mode === 'combo') { setComboOpen(true); return; }
     if (mode === 'flavors') { setFlavorOpen(true); return; }
-    if (product.has_options) { setConfigOpen(true); return; }
+    if (needsConfig) { setConfigOpen(true); return; }
     const quantityToAdd = availableStock !== null ? Math.min(quantity, availableStock) : quantity;
     for (let i = 0; i < quantityToAdd; i++) {
       addItem({
@@ -177,7 +180,7 @@ export function ProductDetailModal({ product, open, onOpenChange }: ProductDetai
         </DrawerContent>
       </Drawer>
 
-      {product.has_options && mode === 'normal' && (
+      {needsConfig && mode === 'normal' && (
         <ProductConfigModal product={product} open={configOpen} onOpenChange={setConfigOpen} />
       )}
       {mode === 'combo' && (
