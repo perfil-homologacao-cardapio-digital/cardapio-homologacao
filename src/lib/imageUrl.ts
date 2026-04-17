@@ -17,7 +17,7 @@ export function getOptimizedImageUrl(
   // Only transform Supabase storage URLs
   if (!url.includes('/storage/v1/object/public/')) return url;
 
-  const { width, quality = 70, resize = 'cover' } = opts;
+  const { width, quality = 70, resize = 'contain' } = opts;
   try {
     const transformed = url.replace(
       '/storage/v1/object/public/',
