@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, memo } from 'react';
 import { cn } from '@/lib/utils';
 
 interface CategoryNavProps {
@@ -7,11 +7,17 @@ interface CategoryNavProps {
   onSelect: (id: string) => void;
 }
 
-export function CategoryNav({ categories, active, onSelect }: CategoryNavProps) {
+export const CategoryNav = memo(function CategoryNav({ categories, active, onSelect }: CategoryNavProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const didMount = useRef(false);
 
   useEffect(() => {
     if (!ref.current || !active) return;
+    // Skip initial scroll to avoid jank on first paint
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
     const el = ref.current.querySelector(`[data-cat="${active}"]`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [active]);
@@ -51,4 +57,4 @@ export function CategoryNav({ categories, active, onSelect }: CategoryNavProps) 
       </div>
     </div>
   );
-}
+});

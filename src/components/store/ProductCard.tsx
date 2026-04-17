@@ -1,4 +1,4 @@
-import { useState, memo, useCallback } from 'react';
+import { useState, memo, useCallback, lazy, Suspense } from 'react';
 import { Plus, Minus, Clock, AlertCircle, ShoppingCart, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,10 +6,12 @@ import { formatCurrency } from '@/lib/format';
 import { useCart } from '@/lib/cart';
 import { cn } from '@/lib/utils';
 import { getAvailableStock, getEffectiveAvailability, getLowStockLabel } from '@/lib/stock';
-import { ProductConfigModal } from './ProductConfigModal';
-import { ComboConfigModal } from './ComboConfigModal';
-import { FlavorConfigModal } from './FlavorConfigModal';
-import { ProductDetailModal } from './ProductDetailModal';
+import { getOptimizedImageUrl, getImageSrcSet } from '@/lib/imageUrl';
+
+const ProductConfigModal = lazy(() => import('./ProductConfigModal').then(m => ({ default: m.ProductConfigModal })));
+const ComboConfigModal = lazy(() => import('./ComboConfigModal').then(m => ({ default: m.ComboConfigModal })));
+const FlavorConfigModal = lazy(() => import('./FlavorConfigModal').then(m => ({ default: m.FlavorConfigModal })));
+const ProductDetailModal = lazy(() => import('./ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
 
 interface ProductCardProps {
   product: {
@@ -107,11 +109,15 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
                 <div className="absolute inset-0 animate-pulse bg-muted" />
               )}
               <img
-                src={product.image_url}
+                src={getOptimizedImageUrl(product.image_url, { width: 224, quality: 65 })}
+                srcSet={getImageSrcSet(product.image_url, [112, 224, 336], 65) || undefined}
+                sizes="(min-width: 768px) 112px, 96px"
                 alt={product.name}
+                width={112}
+                height={112}
                 loading={priority ? "eager" : "lazy"}
-                decoding={priority ? "sync" : "async"}
-                fetchPriority={priority ? "high" : undefined}
+                decoding="async"
+                fetchPriority={priority ? "high" : "low"}
                 className={cn(
                   "w-full h-full object-cover transition-opacity duration-300",
                   imgLoaded ? "opacity-100" : "opacity-0"
@@ -203,35 +209,39 @@ export const ProductCard = memo(function ProductCard({ product, priority = false
         </div>
       </div>
 
-      <ProductDetailModal
-        product={product}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-      />
+      <Suspense fallback={null}>
+        {detailOpen && (
+          <ProductDetailModal
+            product={product}
+            open={detailOpen}
+            onOpenChange={setDetailOpen}
+          />
+        )}
 
-      {needsConfig && mode === 'normal' && (
-        <ProductConfigModal
-          product={product}
-          open={configOpen}
-          onOpenChange={setConfigOpen}
-        />
-      )}
+        {needsConfig && mode === 'normal' && configOpen && (
+          <ProductConfigModal
+            product={product}
+            open={configOpen}
+            onOpenChange={setConfigOpen}
+          />
+        )}
 
-      {mode === 'combo' && (
-        <ComboConfigModal
-          product={product as any}
-          open={comboOpen}
-          onOpenChange={setComboOpen}
-        />
-      )}
+        {mode === 'combo' && comboOpen && (
+          <ComboConfigModal
+            product={product as any}
+            open={comboOpen}
+            onOpenChange={setComboOpen}
+          />
+        )}
 
-      {mode === 'flavors' && (
-        <FlavorConfigModal
-          product={product as any}
-          open={flavorOpen}
-          onOpenChange={setFlavorOpen}
-        />
-      )}
+        {mode === 'flavors' && flavorOpen && (
+          <FlavorConfigModal
+            product={product as any}
+            open={flavorOpen}
+            onOpenChange={setFlavorOpen}
+          />
+        )}
+      </Suspense>
     </>
   );
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,10 +7,11 @@ import { StoreHeader } from '@/components/store/StoreHeader';
 import { CategoryNav } from '@/components/store/CategoryNav';
 import { ProductCard } from '@/components/store/ProductCard';
 import { CartDrawer, CartSidebar } from '@/components/store/CartDrawer';
-import { CheckoutForm } from '@/components/store/CheckoutForm';
-import { OrderTracker } from '@/components/store/OrderTracker';
-import { ProductDetailModal } from '@/components/store/ProductDetailModal';
 import { getEffectiveAvailability } from '@/lib/stock';
+
+const CheckoutForm = lazy(() => import('@/components/store/CheckoutForm').then(m => ({ default: m.CheckoutForm })));
+const OrderTracker = lazy(() => import('@/components/store/OrderTracker').then(m => ({ default: m.OrderTracker })));
+const ProductDetailModal = lazy(() => import('@/components/store/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
 
 function StoreContent() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -90,7 +91,11 @@ function StoreContent() {
   const hasResults = groupedProducts.length > 0 || uncategorized.length > 0;
 
   if (showCheckout) {
-    return <CheckoutForm onBack={handleBack} />;
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
+        <CheckoutForm onBack={handleBack} />
+      </Suspense>
+    );
   }
 
   return (
@@ -144,14 +149,16 @@ function StoreContent() {
         </div>
       </div>
       <CartDrawer onCheckout={handleCheckout} />
-      <OrderTracker open={showTracker} onOpenChange={setShowTracker} />
-      {deepLinkProduct && (
-        <ProductDetailModal
-          product={deepLinkProduct}
-          open={deepLinkOpen}
-          onOpenChange={handleDeepLinkClose}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showTracker && <OrderTracker open={showTracker} onOpenChange={setShowTracker} />}
+        {deepLinkProduct && deepLinkOpen && (
+          <ProductDetailModal
+            product={deepLinkProduct}
+            open={deepLinkOpen}
+            onOpenChange={handleDeepLinkClose}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

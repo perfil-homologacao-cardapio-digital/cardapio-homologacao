@@ -2,6 +2,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { ShoppingBag, MapPin, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getOptimizedImageUrl, getImageSrcSet } from '@/lib/imageUrl';
 
 interface StoreHeaderProps {
   onTrackOrder?: () => void;
@@ -21,11 +22,15 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
       {hasBanner && (
         <>
           <img
-            src={bannerUrl}
+            src={getOptimizedImageUrl(bannerUrl, { width: 1280, quality: 65 })}
+            srcSet={getImageSrcSet(bannerUrl, [640, 1024, 1280, 1600], 65) || undefined}
+            sizes="100vw"
             alt=""
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover"
             loading="eager"
+            decoding="async"
+            fetchPriority="high"
           />
           <div className="absolute inset-0 bg-black/45" />
         </>
@@ -46,8 +51,13 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
             <>
               {logoUrl ? (
                 <img
-                  src={logoUrl}
+                  src={getOptimizedImageUrl(logoUrl, { width: 192, quality: 75 })}
                   alt={name}
+                  width={96}
+                  height={96}
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                   className="h-24 w-24 rounded-3xl object-cover shadow-xl border-2 border-background/80 ring-2 ring-primary/15 mb-4"
                 />
               ) : (
@@ -92,7 +102,7 @@ export function StoreHeader({ onTrackOrder }: StoreHeaderProps) {
         <div className="hidden md:flex items-center justify-between">
           <div className="flex items-center gap-4">
             {logoUrl ? (
-              <img src={logoUrl} alt={name} className="h-14 w-14 rounded-2xl object-cover shadow-lg border border-border/30" />
+              <img src={getOptimizedImageUrl(logoUrl, { width: 112, quality: 75 })} alt={name} width={56} height={56} loading="eager" decoding="async" fetchPriority="high" className="h-14 w-14 rounded-2xl object-cover shadow-lg border border-border/30" />
             ) : (
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/25">
                 <ShoppingBag className="h-7 w-7 text-primary-foreground" />

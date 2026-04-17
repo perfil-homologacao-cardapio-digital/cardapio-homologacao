@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { normalizeStockQuantity } from '@/lib/stock';
 
@@ -130,15 +130,24 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => setItems([]), []);
 
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const hasPreorderItems = items.some(i => i.is_preorder);
+  const { subtotal, itemCount, hasPreorderItems } = useMemo(() => {
+    let sub = 0;
+    let count = 0;
+    let pre = false;
+    for (const item of items) {
+      sub += item.price * item.quantity;
+      count += item.quantity;
+      if (item.is_preorder) pre = true;
+    }
+    return { subtotal: sub, itemCount: count, hasPreorderItems: pre };
+  }, [items]);
 
-  return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, clearCart, subtotal, itemCount, hasPreorderItems }}>
-      {children}
-    </CartContext.Provider>
+  const value = useMemo(
+    () => ({ items, addItem, removeItem, updateQuantity, clearCart, subtotal, itemCount, hasPreorderItems }),
+    [items, addItem, removeItem, updateQuantity, clearCart, subtotal, itemCount, hasPreorderItems]
   );
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
 export function useCart() {
