@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, formatPhone, ORDER_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES } from '@/lib/format';
@@ -97,7 +97,20 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
   if (page > 0 && page >= totalPages) setPage(Math.max(0, totalPages - 1));
 
   const handlePrint = () => {
-    window.print();
+    const is58 = settings?.printer_paper_width === '58mm';
+    const body = document.body;
+    const had = body.classList.contains('printer-58mm');
+    if (is58) body.classList.add('printer-58mm');
+    else body.classList.remove('printer-58mm');
+
+    const cleanup = () => {
+      if (!had) body.classList.remove('printer-58mm');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    // Give the browser a tick to apply the class before opening the print dialog
+    setTimeout(() => window.print(), 50);
   };
 
   const handleWhatsApp = () => {
@@ -293,6 +306,90 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                 </div>
               </div>
 
+              {/* ===== Dedicated 58mm receipt — only visible when printing in 58mm mode ===== */}
+              <div className="receipt-58mm no-print-screen" data-print-receipt-58="true" style={{ display: 'none' }}>
+                <div className="receipt-58mm-header">
+                  <div className="receipt-58mm-store">{storeName}</div>
+                  <div className="receipt-58mm-meta">Pedido #{order.order_number}</div>
+                  <div className="receipt-58mm-meta">{formatDate(order.created_at)}</div>
+                </div>
+                <div className="receipt-58mm-sep" />
+                <div className="receipt-58mm-section">
+                  <div className="receipt-58mm-line"><strong>{order.customer_name}</strong></div>
+                  <div className="receipt-58mm-line">{formatPhone(order.customer_phone)}</div>
+                  {order.address === 'Retirada no balcão' ? (
+                    <div className="receipt-58mm-line receipt-58mm-strong">RETIRADA NO BALCAO</div>
+                  ) : (
+                    <>
+                      <div className="receipt-58mm-line">End: {order.address}, {order.address_number}</div>
+                      {order.complement && <div className="receipt-58mm-line">{order.complement}</div>}
+                      {order.neighborhood_name && <div className="receipt-58mm-line">{order.neighborhood_name}</div>}
+                    </>
+                  )}
+                </div>
+                <div className="receipt-58mm-sep" />
+                <div className="receipt-58mm-section">
+                  {orderItems.map(item => {
+                    const itemSels = orderItemSelections.filter(s => s.order_item_id === item.id);
+                    const grouped = itemSels.reduce((acc, s) => {
+                      const gn = s.group_name_snapshot || 'Opções';
+                      if (!acc[gn]) acc[gn] = [];
+                      acc[gn].push(s.option_name_snapshot || '');
+                      return acc;
+                    }, {} as Record<string, string[]>);
+                    const groupedWithCount = Object.entries(grouped).map(([gn, opts]) => {
+                      const counts = opts.reduce((countAcc, opt) => {
+                        if (opt) countAcc[opt] = (countAcc[opt] || 0) + 1;
+                        return countAcc;
+                      }, {} as Record<string, number>);
+                      const formatted = Object.entries(counts).map(([name, count]) =>
+                        count > 1 ? `${count}x ${name}` : name
+                      );
+                      return [gn, formatted] as [string, string[]];
+                    });
+                    return (
+                      <div key={item.id} className="receipt-58mm-item-block">
+                        <div className="receipt-58mm-item">
+                          <span className="receipt-58mm-item-name">{item.quantity}x {item.product_name}</span>
+                          <span className="receipt-58mm-item-value">{formatCurrency(Number(item.subtotal))}</span>
+                        </div>
+                        {groupedWithCount.map(([gn, opts]) => (
+                          <div key={gn} className="receipt-58mm-item-opt">{gn}: {opts.join(', ')}</div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="receipt-58mm-sep" />
+                <div className="receipt-58mm-section">
+                  <div className="receipt-58mm-total-row">
+                    <span className="receipt-58mm-total-label">Subtotal</span>
+                    <span className="receipt-58mm-total-value">{formatCurrency(Number(order.subtotal))}</span>
+                  </div>
+                  {order.coupon_code && Number(order.discount_value) > 0 && (
+                    <div className="receipt-58mm-total-row">
+                      <span className="receipt-58mm-total-label">Cupom {order.coupon_code}</span>
+                      <span className="receipt-58mm-total-value">-{formatCurrency(Number(order.discount_value))}</span>
+                    </div>
+                  )}
+                  <div className="receipt-58mm-total-row">
+                    <span className="receipt-58mm-total-label">Entrega</span>
+                    <span className="receipt-58mm-total-value">{Number(order.delivery_fee) === 0 ? 'Gratis' : formatCurrency(Number(order.delivery_fee))}</span>
+                  </div>
+                  <div className="receipt-58mm-total-row receipt-58mm-grand">
+                    <span className="receipt-58mm-total-label">TOTAL</span>
+                    <span className="receipt-58mm-total-value">{formatCurrency(Number(order.total))}</span>
+                  </div>
+                </div>
+                <div className="receipt-58mm-sep" />
+                <div className="receipt-58mm-section">
+                  <div className="receipt-58mm-line">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
+                  {order.needs_change && <div className="receipt-58mm-line">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
+                  {order.preorder_date && <div className="receipt-58mm-line receipt-58mm-strong">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
+                </div>
+                <div className="receipt-58mm-footer">--- Obrigado pela preferencia! ---</div>
+              </div>
+
               {/* Thermal print layout - only visible on print */}
               <div className="hidden print-only thermal-receipt" data-print-receipt="true">
                 <div className="text-center font-bold text-base mb-2">{storeName}</div>
@@ -334,24 +431,24 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                     return [gn, formatted] as [string, string[]];
                   });
                   return (
-                    <div key={item.id} className="mb-1">
-                      <div className="flex justify-between text-xs">
-                        <span>{item.quantity}x {item.product_name}</span>
-                        <span>{formatCurrency(Number(item.subtotal))}</span>
+                    <div key={item.id} className="receipt-item mb-1">
+                      <div className="receipt-row receipt-item-row flex justify-between text-xs">
+                        <span className="receipt-item-name">{item.quantity}x {item.product_name}</span>
+                        <span className="receipt-item-price">{formatCurrency(Number(item.subtotal))}</span>
                       </div>
                       {groupedWithCount.map(([gn, opts]) => (
-                        <div key={gn} className="text-[10px] ml-2">{gn}: {opts.join(', ')}</div>
+                        <div key={gn} className="receipt-item-options text-[10px] ml-2">{gn}: {opts.join(', ')}</div>
                       ))}
                     </div>
                   );
                 })}
                 <div className="border-t border-dashed my-2" />
-                <div className="flex justify-between text-xs"><span>Subtotal</span><span>{formatCurrency(Number(order.subtotal))}</span></div>
+                <div className="receipt-row receipt-total-row flex justify-between text-xs"><span className="receipt-total-label">Subtotal</span><span className="receipt-total-value">{formatCurrency(Number(order.subtotal))}</span></div>
                 {order.coupon_code && Number(order.discount_value) > 0 && (
-                  <div className="flex justify-between text-xs"><span>Cupom {order.coupon_code}</span><span>-{formatCurrency(Number(order.discount_value))}</span></div>
+                  <div className="receipt-row receipt-total-row flex justify-between text-xs"><span className="receipt-total-label">Cupom {order.coupon_code}</span><span className="receipt-total-value">-{formatCurrency(Number(order.discount_value))}</span></div>
                 )}
-                <div className="flex justify-between text-xs"><span>Entrega</span><span>{Number(order.delivery_fee) === 0 ? 'Grátis' : formatCurrency(Number(order.delivery_fee))}</span></div>
-                <div className="flex justify-between text-sm font-bold mt-1"><span>TOTAL</span><span>{formatCurrency(Number(order.total))}</span></div>
+                <div className="receipt-row receipt-total-row flex justify-between text-xs"><span className="receipt-total-label">Entrega</span><span className="receipt-total-value">{Number(order.delivery_fee) === 0 ? 'Grátis' : formatCurrency(Number(order.delivery_fee))}</span></div>
+                <div className="receipt-row receipt-total-row receipt-grand-total flex justify-between text-sm font-bold mt-1"><span className="receipt-total-label">TOTAL</span><span className="receipt-total-value">{formatCurrency(Number(order.total))}</span></div>
                 <div className="border-t border-dashed my-2" />
                 <div className="text-xs">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                 {order.needs_change && <div className="text-xs">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}

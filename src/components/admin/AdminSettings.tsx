@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, X, Upload } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { compressImage } from '@/lib/imageUtils';
+import { compressImage, compressImageToWebp } from '@/lib/imageUtils';
 import { WeeklyScheduleEditor } from '@/components/admin/WeeklyScheduleEditor';
 import { parseSchedule, type WeeklySchedule } from '@/lib/storeHours';
 import { THEME_LABELS, THEME_SWATCHES, type ThemeMode, applyTheme } from '@/lib/themes';
@@ -50,6 +50,7 @@ export function AdminSettings() {
     pix_recipient_name: '',
     pix_recipient_city: '',
     theme_mode: 'default' as ThemeMode,
+    printer_paper_width: '80mm' as '58mm' | '80mm',
   });
   const [schedule, setSchedule] = useState<WeeklySchedule>(() => parseSchedule(null));
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -86,6 +87,7 @@ export function AdminSettings() {
         pix_recipient_name: settings.pix_recipient_name || '',
         pix_recipient_city: settings.pix_recipient_city || '',
         theme_mode: ((settings.theme_mode as ThemeMode) || 'default') as ThemeMode,
+        printer_paper_width: (settings.printer_paper_width === '58mm' ? '58mm' : '80mm'),
       });
       setSchedule(parseSchedule(settings.weekly_schedule));
     }
@@ -122,6 +124,7 @@ export function AdminSettings() {
         { key: 'pix_recipient_name', value: form.pix_recipient_name },
         { key: 'pix_recipient_city', value: form.pix_recipient_city },
         { key: 'theme_mode', value: form.theme_mode || 'default' },
+        { key: 'printer_paper_width', value: form.printer_paper_width || '80mm' },
         { key: 'weekly_schedule', value: JSON.stringify(schedule) },
       ];
       for (const entry of entries) {
@@ -152,9 +155,13 @@ export function AdminSettings() {
     }
     setUploadingLogo(true);
     try {
-      const compressed = await compressImage(file);
-      const path = `logo_${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from('product-images').upload(path, compressed);
+      const compressed = await compressImageToWebp(file);
+      const ext = compressed.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `logo_${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('product-images').upload(path, compressed, {
+        contentType: compressed.type,
+        cacheControl: '3600',
+      });
       if (error) { toast({ title: 'Erro no upload', description: error.message, variant: 'destructive' }); setUploadingLogo(false); return; }
       const { data } = supabase.storage.from('product-images').getPublicUrl(path);
       set('logo_url', data.publicUrl);
@@ -174,9 +181,13 @@ export function AdminSettings() {
     setUploadingBanner(true);
     try {
       // Banner is wider — allow up to 1920px, target ~80KB for better quality on hero image
-      const compressed = await compressImage(file, 80, 1920, 1080, 0.8);
-      const path = `banner_${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from('product-images').upload(path, compressed);
+      const compressed = await compressImageToWebp(file, 80, 1920, 1080, 0.85);
+      const ext = compressed.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `banner_${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('product-images').upload(path, compressed, {
+        contentType: compressed.type,
+        cacheControl: '3600',
+      });
       if (error) { toast({ title: 'Erro no upload', description: error.message, variant: 'destructive' }); setUploadingBanner(false); return; }
       const { data } = supabase.storage.from('product-images').getPublicUrl(path);
       set('banner_url', data.publicUrl);
@@ -341,6 +352,23 @@ export function AdminSettings() {
             <p className="text-xs text-muted-foreground">Toca um sino quando chegar pedido novo não visualizado</p>
           </div>
           <Switch checked={form.sound_alert} onCheckedChange={v => set('sound_alert', v)} />
+        </div>
+        {/* Largura do papel da impressora */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-2">
+          <Label className="font-bold">🖨️ Largura do papel da impressora</Label>
+          <p className="text-xs text-muted-foreground">Selecione a largura da bobina térmica. O modo 58mm usa um layout otimizado para evitar cortes.</p>
+          <Select
+            value={form.printer_paper_width}
+            onValueChange={(v) => set('printer_paper_width', v as '58mm' | '80mm')}
+          >
+            <SelectTrigger className="rounded-xl">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="80mm">80 mm (padrão)</SelectItem>
+              <SelectItem value="58mm">58 mm (compacta)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         {/* Tema visual */}
         <div className="bg-accent/50 rounded-xl p-4 space-y-2">

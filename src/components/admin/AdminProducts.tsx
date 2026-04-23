@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2, Copy } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
-import { compressImage } from '@/lib/imageUtils';
+import { compressImage, compressImageToWebp } from '@/lib/imageUtils';
 import { getEffectiveAvailability, normalizeStockQuantity } from '@/lib/stock';
 import {
   DndContext,
@@ -169,7 +169,7 @@ export function AdminProducts() {
     queryFn: async () => {
       const { data, error } = await supabase.from('products').select('*').order('sort_order');
       if (error) throw error;
-      return data;
+      return (data || []).filter((p: any) => p.is_archived !== true);
     },
   });
 
@@ -273,7 +273,11 @@ export function AdminProducts() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('products').delete().eq('id', id);
+      // Soft-delete: archive product to preserve order history (FK from order_items)
+      const { error } = await supabase
+        .from('products')
+        .update({ is_archived: true, available: false } as any)
+        .eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -298,8 +302,14 @@ export function AdminProducts() {
       if (insErr) throw insErr;
       const newProductId = newProd.id;
 
-      // 2. Duplicate option groups + their options
-      const { data: groups } = await supabase.from('product_option_groups').select('*').eq('product_id', id);
+      // 2. Duplicate option groups + their options (sequential, no row limit, ordered)
+      const { data: groups, error: groupsErr } = await supabase
+        .from('product_option_groups')
+        .select('*')
+        .eq('product_id', id)
+        .order('sort_order', { ascending: true })
+        .range(0, 9999);
+      if (groupsErr) throw groupsErr;
       if (groups && groups.length > 0) {
         for (const g of groups as any[]) {
           const { id: gid, created_at: _c, updated_at: _u, ...gRest } = g;
@@ -309,7 +319,13 @@ export function AdminProducts() {
             .select('id')
             .single();
           if (gErr) throw gErr;
-          const { data: opts } = await supabase.from('product_options').select('*').eq('group_id', gid);
+          const { data: opts, error: optsErr } = await supabase
+            .from('product_options')
+            .select('*')
+            .eq('group_id', gid)
+            .order('sort_order', { ascending: true })
+            .range(0, 9999);
+          if (optsErr) throw optsErr;
           if (opts && opts.length > 0) {
             const newOpts = (opts as any[]).map(({ id: _i, created_at: _c2, updated_at: _u2, group_id: _g, ...oRest }) => ({
               ...oRest,
@@ -322,7 +338,13 @@ export function AdminProducts() {
       }
 
       // 3. Duplicate combo_items
-      const { data: comboItems } = await supabase.from('combo_items').select('*').eq('product_id', id);
+      const { data: comboItems, error: comboErr } = await supabase
+        .from('combo_items')
+        .select('*')
+        .eq('product_id', id)
+        .order('sort_order', { ascending: true })
+        .range(0, 9999);
+      if (comboErr) throw comboErr;
       if (comboItems && comboItems.length > 0) {
         const newItems = (comboItems as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
           ...rest,
@@ -333,7 +355,13 @@ export function AdminProducts() {
       }
 
       // 4. Duplicate flavor_items
-      const { data: flavorItems } = await supabase.from('flavor_items').select('*').eq('product_id', id);
+      const { data: flavorItems, error: flavorErr } = await supabase
+        .from('flavor_items')
+        .select('*')
+        .eq('product_id', id)
+        .order('sort_order', { ascending: true })
+        .range(0, 9999);
+      if (flavorErr) throw flavorErr;
       if (flavorItems && flavorItems.length > 0) {
         const newItems = (flavorItems as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
           ...rest,
@@ -344,7 +372,13 @@ export function AdminProducts() {
       }
 
       // 5. Duplicate pizza_crust_options
-      const { data: crustOpts } = await supabase.from('pizza_crust_options' as any).select('*').eq('product_id', id);
+      const { data: crustOpts, error: crustErr } = await supabase
+        .from('pizza_crust_options' as any)
+        .select('*')
+        .eq('product_id', id)
+        .order('sort_order', { ascending: true })
+        .range(0, 9999);
+      if (crustErr) throw crustErr;
       if (crustOpts && (crustOpts as any[]).length > 0) {
         const newItems = (crustOpts as any[]).map(({ id: _i, created_at: _c, updated_at: _u, product_id: _p, ...rest }) => ({
           ...rest,
@@ -354,12 +388,15 @@ export function AdminProducts() {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['combo-items'] });
-      queryClient.invalidateQueries({ queryKey: ['flavor-items'] });
-      queryClient.invalidateQueries({ queryKey: ['crust-options'] });
-      queryClient.invalidateQueries({ queryKey: ['product-option-groups'] });
+    onSuccess: async () => {
+      // Wait for refetches to complete so the UI shows the fully duplicated product
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['combo-items'] }),
+        queryClient.invalidateQueries({ queryKey: ['flavor-items'] }),
+        queryClient.invalidateQueries({ queryKey: ['crust-options'] }),
+        queryClient.invalidateQueries({ queryKey: ['product-option-groups'] }),
+      ]);
       setDuplicateId(null);
       toast({ title: 'Produto duplicado com sucesso' });
     },
@@ -405,9 +442,13 @@ export function AdminProducts() {
     }
     setUploading(true);
     try {
-      const compressed = await compressImage(file);
-      const path = `${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from('product-images').upload(path, compressed);
+      const compressed = await compressImageToWebp(file);
+      const ext = compressed.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('product-images').upload(path, compressed, {
+        contentType: compressed.type,
+        cacheControl: '3600',
+      });
       if (error) {
         toast({ title: 'Erro no upload', description: error.message, variant: 'destructive' });
         setUploading(false);
@@ -785,9 +826,17 @@ export function AdminProducts() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => duplicateId && duplicate.mutate(duplicateId)}>
-              {duplicate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar'}
+            <AlertDialogCancel disabled={duplicate.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={duplicate.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (duplicateId && !duplicate.isPending) duplicate.mutate(duplicateId);
+              }}
+            >
+              {duplicate.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Duplicando...</>
+              ) : 'Confirmar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
