@@ -35,12 +35,18 @@ function StoreContent() {
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('products').select('*').order('sort_order');
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .or('is_archived.is.null,is_archived.eq.false')
+        .order('sort_order');
       if (error) throw error;
-      return (data || []).map(product => ({
-        ...product,
-        available: getEffectiveAvailability(product),
-      }));
+      return (data || [])
+        .filter((p: any) => p.is_archived !== true)
+        .map(product => ({
+          ...product,
+          available: getEffectiveAvailability(product),
+        }));
     },
   });
 
