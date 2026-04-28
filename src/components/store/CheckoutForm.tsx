@@ -520,11 +520,10 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     const effectiveCardToken = opts?.cardTokenOverride ?? cardToken;
     const effectiveCardInfo = opts?.cardInfoOverride ?? cardInfo;
 
-    if (form.payment_method === 'credit') {
-      if (!showCardBrick) {
-        toast({ title: 'Cartão indisponível', description: 'Selecione outra forma de pagamento.', variant: 'destructive' });
-        return;
-      }
+    // Card validation only applies when automated payments (Mercado Pago) are enabled.
+    // In manual mode, "Cartão de crédito" is treated as an offline payment method
+    // (same flow as cash/manual pix) and must NOT be blocked.
+    if (form.payment_method === 'credit' && paymentAutomationEnabled && showCardBrick) {
       if (!effectiveCardToken) {
         toast({ title: 'Cartão pendente', description: 'Informe os dados do cartão para continuar.', variant: 'destructive' });
         openCardBrick();
@@ -808,14 +807,16 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     };
 
     const isPixAuto = successData?.orderPayload?.payment_method === 'pix_auto';
-    const isCard = successData?.orderPayload?.payment_method === 'credit';
+    // Only treat credit as "automated card" when MP automation is actually enabled.
+    // In manual mode, credit is an offline payment like cash/manual pix.
+    const isCard = successData?.orderPayload?.payment_method === 'credit' && paymentAutomationEnabled && showCardBrick;
     const cardApproved = isCard && cardStatus === 'approved';
     const cardProcessing = isCard && cardStatus === 'processing';
     const cardFailed = isCard && cardStatus === 'failed';
     const cardInReview = isCard && cardStatus === 'in_review';
     const showWhatsAppCta = whatsappOrderEnabled && storeWhatsapp
       && !(isPixAuto && pixAutoPaid)
-      && !isCard; // for card, we show WhatsApp only after approval (handled below)
+      && !isCard; // for automated card, WhatsApp is shown only after approval (handled below)
 
     return (
       <>
