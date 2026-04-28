@@ -14,10 +14,14 @@ import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, CheckCircle2, Loader2, Bug, Clock, MessageCircle, Copy, Check, QrCode } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { generatePixPayload } from '@/lib/pixPayload';
 import QRCode from 'qrcode';
+import { PixAutoPaymentModal } from './PixAutoPaymentModal';
+import { CardPaymentBrickModal } from './CardPaymentBrickModal';
+import { CardSuccessModal } from './CardSuccessModal';
 
 // Error Boundary to prevent white screen
 class CheckoutErrorBoundary extends Component<{ children: ReactNode; onBack: () => void }, { hasError: boolean }> {
@@ -198,12 +202,37 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     needs_change: false,
     change_amount: '',
     preorder_date: '',
+    notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [successData, setSuccessData] = useState<{ orderNumber: number; orderPayload: any; sentItems: any[] } | null>(null);
+  const [successData, setSuccessData] = useState<{ orderNumber: number; orderId: string; orderPayload: any; sentItems: any[] } | null>(null);
   const [debugPayload, setDebugPayload] = useState<any>(null);
   const [debugError, setDebugError] = useState<any>(null);
+  const [pixAutoModalOpen, setPixAutoModalOpen] = useState(false);
+  const [pixAutoPaid, setPixAutoPaid] = useState(false);
+  const [cardBrickOpen, setCardBrickOpen] = useState(false);
+  const [cardToken, setCardToken] = useState<string | null>(null);
+  const [cardInfo, setCardInfo] = useState<any>(null);
+  const [cardStatus, setCardStatus] = useState<'idle' | 'processing' | 'approved' | 'failed' | 'in_review'>('idle');
+  const [cardErrorMsg, setCardErrorMsg] = useState<string>('');
+  const [cardSuccessOpen, setCardSuccessOpen] = useState(false);
+  const [cardBrickKey, setCardBrickKey] = useState(0);
+  // Always force a fresh Brick instance whenever the modal is (re)opened.
+  const openCardBrick = useCallback(() => {
+    setCardBrickKey(k => k + 1);
+    setCardBrickOpen(true);
+  }, []);
+  const handleCardBrickOpenChange = useCallback((open: boolean) => {
+    if (open) {
+      setCardBrickKey(k => k + 1);
+      setCardBrickOpen(true);
+    } else {
+      setCardBrickOpen(false);
+      // Bump key on close so the next open starts from a clean DOM/SDK state.
+      setCardBrickKey(k => k + 1);
+    }
+  }, []);
   
 
   const safeNeighborhoods = useMemo(
@@ -226,12 +255,140 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const selectedNeighborhood = safeNeighborhoods.find(n => n.id === form.neighborhood_id) ?? null;
   const deliveryFee = isPickup || freeDelivery ? 0 : safeNum(selectedNeighborhood?.delivery_fee);
 
-  const availablePaymentMethods = useMemo(() => [
-    { value: 'pix', label: 'Pix', key: 'payment_pix' },
-    { value: 'cash', label: 'Dinheiro', key: 'payment_cash' },
-    { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
-    { value: 'debit', label: 'Cartão de Débito', key: 'payment_debit' },
-  ].filter(method => !settings || settings[method.key] !== 'false'), [settings]);
+  const paymentAutomationUnlocked = String(settings?.payment_automation_unlocked ?? '').trim().toLowerCase() === 'true';
+  const paymentAutomationEnabled = String(settings?.payment_automation_enabled ?? '').trim().toLowerCase() === 'true';
+  const mercadopagoTokenConfigured = !!(settings?.mercadopago_access_token && settings.mercadopago_access_token.trim() !== '');
+  const mercadopagoPublicKey = (settings?.mercadopago_public_key || '').trim();
+  const showPixAuto = paymentAutomationUnlocked && paymentAutomationEnabled && mercadopagoTokenConfigured;
+  const showCardBrick = paymentAutomationUnlocked && paymentAutomationEnabled && !!mercadopagoPublicKey;
+
+  const availablePaymentMethods = useMemo(() => {
+    // When automated payments are ENABLED, simplify the list to only "Pix" (automated)
+    // and "Cartão de crédito" — to reduce confusion. Manual flows remain unchanged when OFF.
+    if (showPixAuto) {
+      return [
+        { value: 'pix_auto', label: 'Pix', key: 'payment_pix_auto' },
+        { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
+      ];
+    }
+    // Original behavior (unchanged) when automated payments are OFF
+    return [
+      { value: 'pix', label: 'Pix', key: 'payment_pix' },
+      { value: 'cash', label: 'Dinheiro', key: 'payment_cash' },
+      { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
+      { value: 'debit', label: 'Cartão de Débito', key: 'payment_debit' },
+    ].filter(method => !settings || settings[method.key] !== 'false');
+  }, [settings, showPixAuto]);
+
+  // Watch payment confirmation for PIX automated flow on success screen (via Edge Function — bypasses RLS)
+  useEffect(() => {
+    const orderId = successData?.orderId;
+    const isPixAuto = successData?.orderPayload?.payment_method === 'pix_auto';
+    if (!success || !orderId || !isPixAuto || pixAutoPaid) return;
+
+    const checkStatus = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('check-payment-status', {
+          body: { order_id: orderId },
+        });
+        if (error) return;
+        if ((data as any)?.payment_status === 'paid') setPixAutoPaid(true);
+      } catch (_) { /* ignore */ }
+    };
+
+    // Realtime as immediate trigger (best-effort)
+    const channel = supabase
+      .channel(`checkout-order-${orderId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` },
+        () => { void checkStatus(); }
+      )
+      .subscribe();
+
+    const interval = setInterval(checkStatus, 6000);
+
+    const revalidate = () => {
+      if (document.hidden) return;
+      void checkStatus();
+    };
+    document.addEventListener('visibilitychange', revalidate);
+    window.addEventListener('focus', revalidate);
+    window.addEventListener('pageshow', revalidate);
+
+    // Initial check
+    void checkStatus();
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', revalidate);
+      window.removeEventListener('focus', revalidate);
+      window.removeEventListener('pageshow', revalidate);
+    };
+  }, [success, successData?.orderId, successData?.orderPayload?.payment_method, pixAutoPaid]);
+
+  // Polling for credit card payments that are in review/pending — reflects real DB status
+  // back into the UI so the customer doesn't get stuck on "Pagamento em análise"
+  // when the webhook eventually marks it as failed (or paid).
+  useEffect(() => {
+    const orderId = successData?.orderId;
+    const isCard = successData?.orderPayload?.payment_method === 'credit';
+    if (!success || !orderId || !isCard) return;
+    // Only poll while the card status is non-final (in_review/processing/idle).
+    if (cardStatus === 'approved' || cardStatus === 'failed') return;
+
+    let cancelled = false;
+
+    const checkStatus = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('check-payment-status', {
+          body: { order_id: orderId },
+        });
+        if (error || cancelled) return;
+        const ps = (data as any)?.payment_status as string | undefined;
+        if (ps === 'paid') {
+          setCardStatus('approved');
+          setCardErrorMsg('');
+        } else if (ps === 'failed') {
+          setCardStatus('failed');
+          setCardErrorMsg('Seu pagamento foi recusado. Você pode tentar novamente com outro cartão.');
+        }
+      } catch (_) { /* ignore */ }
+    };
+
+    // Realtime trigger for instant update when the webhook writes to the row.
+    const channel = supabase
+      .channel(`checkout-card-${orderId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` },
+        () => { void checkStatus(); }
+      )
+      .subscribe();
+
+    const interval = setInterval(checkStatus, 4000);
+
+    const revalidate = () => {
+      if (document.hidden) return;
+      void checkStatus();
+    };
+    document.addEventListener('visibilitychange', revalidate);
+    window.addEventListener('focus', revalidate);
+    window.addEventListener('pageshow', revalidate);
+
+    void checkStatus();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', revalidate);
+      window.removeEventListener('focus', revalidate);
+      window.removeEventListener('pageshow', revalidate);
+    };
+  }, [success, successData?.orderId, successData?.orderPayload?.payment_method, cardStatus]);
+
 
   const normalizedPaymentMethod = typeof form.payment_method === 'string' ? form.payment_method.trim() : '';
   const hasValidPaymentMethod = availablePaymentMethods.some(method => method.value === normalizedPaymentMethod);
@@ -300,44 +457,43 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!items.length) return;
+  const validateForOrder = (): boolean => {
+    if (!items.length) return false;
 
-    // Validate delivery_mode
     if (allowPickup && !pickupOnly && !form.delivery_mode) {
       toast({ title: 'Escolha obrigatória', description: 'Selecione Entrega ou Retirada no balcão.', variant: 'destructive' });
-      return;
+      return false;
     }
-
-    // Validate minimum order (only for delivery)
     if (minOrderEnabled && isDelivery && subtotal < minOrderValue) {
       toast({ title: 'Pedido mínimo', description: `Nosso pedido mínimo é de ${formatCurrency(minOrderValue)}`, variant: 'destructive' });
-      return;
+      return false;
     }
-
-    // Validate phone
     if (!isValidPhone(form.customer_phone)) {
       toast({ title: 'Telefone inválido', description: 'Informe um telefone válido.', variant: 'destructive' });
-      return;
+      return false;
     }
-
-    // Validate neighborhood for delivery (non-free)
-    if (isDelivery && !freeDelivery && !form.neighborhood_id) {
-      toast({ title: 'Bairro obrigatório', description: 'Selecione um bairro para entrega.', variant: 'destructive' });
-      return;
+    if (!form.customer_name.trim()) {
+      toast({ title: 'Nome obrigatório', description: 'Informe seu nome.', variant: 'destructive' });
+      return false;
     }
-
+    if (isDelivery) {
+      if (!freeDelivery && !form.neighborhood_id) {
+        toast({ title: 'Bairro obrigatório', description: 'Selecione um bairro para entrega.', variant: 'destructive' });
+        return false;
+      }
+      if (!form.address.trim() || !form.address_number.trim()) {
+        toast({ title: 'Endereço obrigatório', description: 'Preencha endereço e número.', variant: 'destructive' });
+        return false;
+      }
+    }
     if (hasPreorderItems && !form.preorder_date) {
       toast({ title: 'Data obrigatória', description: 'Selecione uma data para itens de encomenda', variant: 'destructive' });
-      return;
+      return false;
     }
-
     if (!hasValidPaymentMethod) {
       toast({ title: 'Pagamento obrigatório', description: 'Selecione uma forma de pagamento para continuar.', variant: 'destructive' });
-      return;
+      return false;
     }
-
     if (hasPreorderItems && form.preorder_date) {
       const preorderItems = items.filter(i => i.is_preorder && i.preorder_days);
       const maxDays = preorderItems.length > 0 ? Math.max(...preorderItems.map(i => i.preorder_days || 0)) : 0;
@@ -346,6 +502,32 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDays);
       if (selected < minDate) {
         toast({ title: 'Data inválida', description: `A data mínima é ${maxDays} dia(s) a partir de hoje`, variant: 'destructive' });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  /**
+   * Core order submission. For credit card, accepts an explicit token override
+   * so the Brick callback can run the full flow without waiting on state.
+   */
+  const runOrderSubmission = async (
+    opts?: { cardTokenOverride?: string; cardInfoOverride?: any }
+  ): Promise<void> => {
+    if (!validateForOrder()) return;
+
+    const effectiveCardToken = opts?.cardTokenOverride ?? cardToken;
+    const effectiveCardInfo = opts?.cardInfoOverride ?? cardInfo;
+
+    if (form.payment_method === 'credit') {
+      if (!showCardBrick) {
+        toast({ title: 'Cartão indisponível', description: 'Selecione outra forma de pagamento.', variant: 'destructive' });
+        return;
+      }
+      if (!effectiveCardToken) {
+        toast({ title: 'Cartão pendente', description: 'Informe os dados do cartão para continuar.', variant: 'destructive' });
+        openCardBrick();
         return;
       }
     }
@@ -392,9 +574,8 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     }
 
     setSubmitting(true);
-    
     let orderPayload: any = null;
-    
+
     try {
       orderPayload = {
         customer_name: String(form.customer_name || '').trim(),
@@ -413,23 +594,15 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         preorder_date: form.preorder_date || null,
         coupon_code: appliedCoupon?.code || null,
         discount_value: safeNum(discountValue),
+        notes: String(form.notes || '').trim() || null,
       };
 
-      console.log('🔍 === DEBUG: INSERT em orders ===');
-      console.log('📦 Objeto completo:', orderPayload);
-      console.log('🔍 ================================');
-
       const { data: created, error: createErr } = await supabase.functions.invoke('create-order', {
-        body: {
-          order: orderPayload,
-          items,
-        },
+        body: { order: orderPayload, items },
       });
 
-      // Extract error message from edge function response (handles non-2xx status)
       let edgeFunctionError: string | null = null;
       if (createErr) {
-        // Try to extract message from the response body
         try {
           if (typeof createErr.context === 'object' && createErr.context) {
             const ctx = createErr.context as any;
@@ -445,10 +618,50 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       if (edgeFunctionError) throw new Error(edgeFunctionError);
 
       const orderNumber = (created as any)?.order?.order_number;
+      const orderId = (created as any)?.order?.id || '';
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      setSuccessData({ orderNumber, orderPayload, sentItems: [...items] });
+      setSuccessData({ orderNumber, orderId, orderPayload, sentItems: [...items] });
       clearCart();
       setSuccess(true);
+
+      if (orderPayload.payment_method === 'pix_auto' && orderId) {
+        setPixAutoModalOpen(true);
+      }
+
+      if (orderPayload.payment_method === 'credit' && orderId && effectiveCardToken) {
+        setCardStatus('processing');
+        setCardErrorMsg('');
+        try {
+          const { data: cardRes, error: cardErr } = await supabase.functions.invoke('mercadopago-create-card-payment', {
+            body: {
+              order_id: orderId,
+              token: effectiveCardToken,
+              installments: effectiveCardInfo?.installments || 1,
+              payment_method_id: effectiveCardInfo?.payment_method_id,
+              issuer_id: effectiveCardInfo?.issuer_id,
+            },
+          });
+          if (cardErr) throw new Error(cardErr.message || 'Erro ao processar cartão');
+          const status = (cardRes as any)?.payment_status;
+          const mpStatus = (cardRes as any)?.status;
+          const statusDetail = (cardRes as any)?.status_detail;
+          if (status === 'paid') {
+            setCardStatus('approved');
+            setCardSuccessOpen(true);
+          } else if (mpStatus === 'in_process' || statusDetail === 'pending_review_manual') {
+            setCardStatus('in_review');
+            setCardErrorMsg('Pagamento em análise, aguarde alguns instantes ou tente outro cartão.');
+          } else {
+            setCardStatus('failed');
+            setCardErrorMsg(statusDetail || 'Pagamento recusado pela operadora.');
+            setCardToken(null);
+          }
+        } catch (e: any) {
+          setCardStatus('failed');
+          setCardErrorMsg(e?.message || 'Erro ao processar cartão');
+          setCardToken(null);
+        }
+      }
     } catch (err: any) {
       const rawMessage = String(err?.message || 'Erro desconhecido');
       const normalizedMessage = rawMessage.toLowerCase();
@@ -490,6 +703,11 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runOrderSubmission();
+  };
+
   const whatsappOrderEnabled = settings?.whatsapp_order_enabled === 'true';
   const storeWhatsapp = settings?.whatsapp || '';
 
@@ -500,7 +718,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       const fullPhone = phone.startsWith('55') ? phone : `55${phone}`;
       const { orderNumber, orderPayload, sentItems } = successData;
 
-      const PAYMENT_LABELS: Record<string, string> = { pix: 'Pix', cash: 'Dinheiro', credit: 'Cartão de Crédito', debit: 'Cartão de Débito' };
+      const PAYMENT_LABELS: Record<string, string> = { pix: 'Pix', pix_auto: 'Pix', cash: 'Dinheiro', credit: 'Cartão de Crédito', debit: 'Cartão de Débito' };
       const isPickupOrder = orderPayload.address === 'Retirada no balcão';
 
       let itemsText = '';
@@ -579,30 +797,168 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         lines.push(`📅 *Data da encomenda: ${formatted}*`);
       }
 
+      if (orderPayload.notes) {
+        lines.push(``);
+        lines.push(`📝 *Observações:* ${orderPayload.notes}`);
+      }
+
+
       const msg = encodeURIComponent(lines.join('\n'));
       return `https://wa.me/${fullPhone}?text=${msg}`;
     };
 
+    const isPixAuto = successData?.orderPayload?.payment_method === 'pix_auto';
+    const isCard = successData?.orderPayload?.payment_method === 'credit';
+    const cardApproved = isCard && cardStatus === 'approved';
+    const cardProcessing = isCard && cardStatus === 'processing';
+    const cardFailed = isCard && cardStatus === 'failed';
+    const cardInReview = isCard && cardStatus === 'in_review';
+    const showWhatsAppCta = whatsappOrderEnabled && storeWhatsapp
+      && !(isPixAuto && pixAutoPaid)
+      && !isCard; // for card, we show WhatsApp only after approval (handled below)
+
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 animate-fade-in">
-        <CheckCircle2 className="h-20 w-20 text-success mb-4" />
-        <h2 className="text-2xl font-extrabold mb-2">Pedido Registrado!</h2>
-        {whatsappOrderEnabled && storeWhatsapp ? (
-          <>
-            <p className="text-muted-foreground mb-2">Seu pedido foi registrado com sucesso.</p>
-            <p className="text-sm font-semibold text-foreground mb-1">Para concluir o atendimento, é obrigatório enviar o pedido no WhatsApp da loja.</p>
-            <p className="text-xs text-muted-foreground mb-5">Clique no botão abaixo para enviar.</p>
-            <a href={buildWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="mb-4 w-full max-w-xs">
-              <Button type="button" className="w-full rounded-xl h-11 font-bold gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
-                <MessageCircle className="h-5 w-5" /> Enviar pedido no WhatsApp
+      <>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 animate-fade-in">
+          <CheckCircle2 className="h-20 w-20 text-success mb-4" />
+          <h2 className="text-2xl font-extrabold mb-2">Pedido Registrado!</h2>
+          {isPixAuto && (
+            <Button
+              type="button"
+              onClick={() => setPixAutoModalOpen(true)}
+              className="mb-4 w-full max-w-xs rounded-xl h-11 font-bold"
+            >
+              Abrir pagamento PIX
+            </Button>
+          )}
+
+          {/* Card status block */}
+          {isCard && cardProcessing && (
+            <div className="mb-4 w-full max-w-xs flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Processando pagamento do cartão...
+            </div>
+          )}
+          {isCard && cardApproved && (
+            <p className="text-success font-semibold mb-3">✅ Pagamento confirmado</p>
+          )}
+          {isCard && cardFailed && (
+            <div className="mb-4 w-full max-w-sm">
+              <Alert variant="destructive" className="rounded-xl text-left">
+                <AlertTitle>Pagamento recusado</AlertTitle>
+                <AlertDescription>
+                  {cardErrorMsg || 'Seu pagamento foi recusado. Você pode tentar novamente com outro cartão.'}
+                </AlertDescription>
+              </Alert>
+              <Button
+                type="button"
+                className="mt-3 w-full rounded-xl h-11 font-bold"
+                onClick={() => {
+                  // Full reset: clear card-related state AND force the Brick to fully remount.
+                  setCardToken(null);
+                  setCardInfo(null);
+                  setCardErrorMsg('');
+                  setCardStatus('idle');
+                  setCardBrickOpen(false);
+                  setCardBrickKey(k => k + 1);
+                  // Reopen on next tick so the modal effect runs against the new container id.
+                  setTimeout(() => setCardBrickOpen(true), 50);
+                }}
+              >
+                Tentar novamente
               </Button>
-            </a>
-          </>
-        ) : (
-          <p className="text-muted-foreground mb-6">Seu pedido foi recebido com sucesso. Em breve entraremos em contato.</p>
-        )}
-        <Button onClick={onBack} variant="outline" className="rounded-xl">Fazer novo pedido</Button>
-      </div>
+            </div>
+          )}
+          {isCard && cardInReview && (
+            <div className="mb-4 w-full max-w-sm">
+              <Alert className="rounded-xl text-left border-warning/40 bg-warning/10">
+                <AlertTitle>Pagamento em análise</AlertTitle>
+                <AlertDescription>
+                  {cardErrorMsg || 'Pagamento em análise, aguarde alguns instantes ou tente outro cartão.'}
+                </AlertDescription>
+              </Alert>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3 w-full rounded-xl h-11 font-bold"
+                onClick={() => {
+                  setCardToken(null);
+                  setCardInfo(null);
+                  setCardErrorMsg('');
+                  setCardStatus('idle');
+                  setCardBrickOpen(false);
+                  setCardBrickKey(k => k + 1);
+                  setTimeout(() => setCardBrickOpen(true), 50);
+                }}
+              >
+                Tentar outro cartão
+              </Button>
+            </div>
+          )}
+
+          {showWhatsAppCta ? (
+            <>
+              <p className="text-muted-foreground mb-2">Seu pedido foi registrado com sucesso.</p>
+              <p className="text-sm font-semibold text-foreground mb-1">Para concluir o atendimento, é obrigatório enviar o pedido no WhatsApp da loja.</p>
+              <p className="text-xs text-muted-foreground mb-5">Clique no botão abaixo para enviar.</p>
+              <a href={buildWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="mb-4 w-full max-w-xs">
+                <Button type="button" className="w-full rounded-xl h-11 font-bold gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
+                  <MessageCircle className="h-5 w-5" /> Enviar pedido no WhatsApp
+                </Button>
+              </a>
+            </>
+          ) : isPixAuto && pixAutoPaid ? (
+            <p className="text-muted-foreground mb-6">✅ Pagamento confirmado. Pedido enviado com sucesso.</p>
+          ) : null}
+
+          {/* WhatsApp CTA for approved card */}
+          {cardApproved && whatsappOrderEnabled && storeWhatsapp && (() => {
+            const baseUrl = buildWhatsAppUrl();
+            let paidUrl = baseUrl;
+            if (baseUrl) {
+              const [base, query] = baseUrl.split('?text=');
+              const decoded = query ? decodeURIComponent(query) : '';
+              const intro = `✅ *Olá, acabei de pagar meu pedido com cartão! Pedido #${successData?.orderNumber || '---'}*\n\n`;
+              paidUrl = `${base}?text=${encodeURIComponent(intro + decoded)}`;
+            }
+            return (
+              <a href={paidUrl} target="_blank" rel="noopener noreferrer" className="mb-4 w-full max-w-xs">
+                <Button type="button" className="w-full rounded-xl h-11 font-bold gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
+                  <MessageCircle className="h-5 w-5" /> Enviar pedido no WhatsApp
+                </Button>
+              </a>
+            );
+          })()}
+
+          {!isCard && !isPixAuto && !whatsappOrderEnabled && (
+            <p className="text-muted-foreground mb-6">Seu pedido foi recebido com sucesso. Em breve entraremos em contato.</p>
+          )}
+
+          <Button onClick={onBack} variant="outline" className="rounded-xl">Fazer novo pedido</Button>
+        </div>
+        {successData?.orderId && (() => {
+          const baseUrl = buildWhatsAppUrl();
+          let paidUrl = baseUrl;
+          if (baseUrl) {
+            const [base, query] = baseUrl.split('?text=');
+            const decoded = query ? decodeURIComponent(query) : '';
+            const intro = `✅ *Olá, acabei de pagar meu pedido! Pedido #${successData.orderNumber || '---'}*\n\n`;
+            paidUrl = `${base}?text=${encodeURIComponent(intro + decoded)}`;
+          }
+          return (
+            <PixAutoPaymentModal
+              open={pixAutoModalOpen}
+              onOpenChange={setPixAutoModalOpen}
+              orderId={successData.orderId}
+              orderNumber={successData.orderNumber}
+              total={Number(successData.orderPayload?.total) || 0}
+              whatsappUrl={baseUrl}
+              paidWhatsappUrl={paidUrl}
+              whatsappEnabled={!!(whatsappOrderEnabled && storeWhatsapp)}
+              onClose={() => setPixAutoModalOpen(false)}
+            />
+          );
+        })()}
+      </>
     );
   }
 
@@ -867,6 +1223,34 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           </>
         )}
 
+        {/* Coupon field — placed BEFORE payment so the total is finalized first */}
+        {hasActiveCoupons && (
+          <div className="bg-accent/50 rounded-xl p-3 space-y-2">
+            <Label>Cupom de desconto</Label>
+            {appliedCoupon ? (
+              <div className="flex items-center justify-between bg-primary/10 rounded-lg p-2">
+                <span className="text-sm font-bold text-primary">
+                  {appliedCoupon.code} — {appliedCoupon.type === 'percentage' ? `${appliedCoupon.value}%` : formatCurrency(appliedCoupon.value)} de desconto
+                </span>
+                <Button type="button" variant="ghost" size="sm" onClick={handleRemoveCoupon} className="text-xs text-destructive h-7">Remover</Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  value={couponCode}
+                  onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder="CÓDIGO"
+                  className="rounded-xl font-mono flex-1"
+                />
+                <Button type="button" variant="secondary" onClick={handleApplyCoupon} disabled={couponLoading || !couponCode.trim()} className="rounded-xl">
+                  {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Aplicar'}
+                </Button>
+              </div>
+            )}
+            {couponError && <p className="text-xs text-destructive">{couponError}</p>}
+          </div>
+        )}
+
         {/* Payment */}
         <div>
           <Label>Forma de pagamento *</Label>
@@ -891,6 +1275,29 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
             <p className="mt-2 text-sm font-medium text-destructive">Selecione uma forma de pagamento para continuar.</p>
           )}
         </div>
+
+        {form.payment_method === 'credit' && showCardBrick && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold">Pagamento seguro com cartão</p>
+                <p className="text-xs text-muted-foreground">
+                  Ao clicar em "Pagar" no formulário do cartão, seu pedido será finalizado e cobrado automaticamente.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {form.payment_method === 'credit' && !showCardBrick && (
+          <Alert className="rounded-xl border-warning/40 bg-warning/10">
+            <AlertTitle>Em breve</AlertTitle>
+            <AlertDescription>
+              Pagamento com cartão será disponibilizado em breve. Selecione outra forma de pagamento para concluir o pedido.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {form.payment_method === 'cash' && (
           <div className="space-y-3 bg-accent/50 rounded-xl p-3">
@@ -926,33 +1333,21 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           }
         })()}
 
-        {/* Coupon field — only if active coupons exist */}
-        {hasActiveCoupons && (
-          <div className="bg-accent/50 rounded-xl p-3 space-y-2">
-            <Label>Cupom de desconto</Label>
-            {appliedCoupon ? (
-              <div className="flex items-center justify-between bg-primary/10 rounded-lg p-2">
-                <span className="text-sm font-bold text-primary">
-                  {appliedCoupon.code} — {appliedCoupon.type === 'percentage' ? `${appliedCoupon.value}%` : formatCurrency(appliedCoupon.value)} de desconto
-                </span>
-                <Button type="button" variant="ghost" size="sm" onClick={handleRemoveCoupon} className="text-xs text-destructive h-7">Remover</Button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <Input
-                  value={couponCode}
-                  onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="CÓDIGO"
-                  className="rounded-xl font-mono flex-1"
-                />
-                <Button type="button" variant="secondary" onClick={handleApplyCoupon} disabled={couponLoading || !couponCode.trim()} className="rounded-xl">
-                  {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Aplicar'}
-                </Button>
-              </div>
-            )}
-            {couponError && <p className="text-xs text-destructive">{couponError}</p>}
-          </div>
-        )}
+        {/* Coupon was moved above the payment selector for better UX. */}
+
+        {/* Order notes (optional) */}
+        <div>
+          <Label htmlFor="notes">Observações do pedido (opcional)</Label>
+          <Textarea
+            id="notes"
+            value={form.notes}
+            onChange={e => set('notes', e.target.value)}
+            placeholder="Ex.: sem cebola, ponto da carne, troco..."
+            className="rounded-xl mt-1"
+            rows={3}
+            maxLength={500}
+          />
+        </div>
 
         <div className="bg-card border border-border rounded-xl p-4 space-y-2">
           <div className="flex justify-between text-sm">
@@ -1001,11 +1396,162 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           />
         )}
 
-        <Button type="submit" disabled={submitting || !items.length || !canCheckout || !hasValidPaymentMethod || (minOrderEnabled && isDelivery && subtotal < minOrderValue)} className="w-full h-12 rounded-xl font-bold text-base">
-          {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : !canCheckout ? 'Loja Fechada' : 'Enviar Pedido'}
-        </Button>
+        {/* For credit card, the "Pagar" button inside the Brick modal finalizes everything.
+            We expose a single button here that opens the Brick — no extra "Finalizar" click. */}
+        {form.payment_method === 'credit' && showCardBrick ? (
+          <Button
+            type="button"
+            disabled={
+              submitting ||
+              !items.length ||
+              !canCheckout ||
+              !hasValidPaymentMethod ||
+              (minOrderEnabled && isDelivery && subtotal < minOrderValue)
+            }
+            onClick={() => {
+              if (!validateForOrder()) return;
+              openCardBrick();
+            }}
+            className="w-full h-12 rounded-xl font-bold text-base"
+          >
+            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> :
+              !canCheckout ? 'Loja Fechada' :
+              `Pagar ${formatCurrency(safeNum(total))} com cartão`}
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              !items.length ||
+              !canCheckout ||
+              !hasValidPaymentMethod ||
+              (form.payment_method === 'credit' && !showCardBrick) ||
+              (minOrderEnabled && isDelivery && subtotal < minOrderValue)
+            }
+            className="w-full h-12 rounded-xl font-bold text-base"
+          >
+            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> :
+              !canCheckout ? 'Loja Fechada' :
+              (form.payment_method === 'credit' && !showCardBrick) ? 'Cartão em breve' :
+              'Enviar Pedido'}
+          </Button>
+        )}
       </form>
       </div>
+
+      {showCardBrick && (
+        <CardPaymentBrickModal
+          open={cardBrickOpen}
+          onOpenChange={handleCardBrickOpenChange}
+          publicKey={mercadopagoPublicKey}
+          amount={safeNum(success ? (successData?.orderPayload?.total || 0) : total)}
+          payerEmail={undefined}
+          resetKey={cardBrickKey}
+          onTokenGenerated={async (token, info) => {
+            setCardToken(token);
+            setCardInfo(info);
+
+            // Case 1: Retry after failed charge on success screen
+            if (success && successData?.orderId && (cardStatus === 'failed' || cardStatus === 'in_review')) {
+              setCardBrickOpen(false);
+              setCardStatus('processing');
+              setCardErrorMsg('');
+              try {
+                const { data: cardRes, error: cardErr } = await supabase.functions.invoke('mercadopago-create-card-payment', {
+                  body: {
+                    order_id: successData.orderId,
+                    token,
+                    installments: info?.installments || 1,
+                    payment_method_id: info?.payment_method_id,
+                    issuer_id: info?.issuer_id,
+                  },
+                });
+                if (cardErr) throw new Error(cardErr.message || 'Erro ao processar cartão');
+                const status = (cardRes as any)?.payment_status;
+                const mpStatus = (cardRes as any)?.status;
+                const statusDetail = (cardRes as any)?.status_detail;
+                if (status === 'paid') {
+                  setCardStatus('approved');
+                  setCardSuccessOpen(true);
+                } else if (mpStatus === 'in_process' || statusDetail === 'pending_review_manual') {
+                  setCardStatus('in_review');
+                  setCardErrorMsg('Pagamento em análise, aguarde alguns instantes ou tente outro cartão.');
+                } else {
+                  setCardStatus('failed');
+                  setCardErrorMsg(statusDetail || 'Pagamento recusado pela operadora.');
+                  setCardToken(null);
+                }
+              } catch (e: any) {
+                setCardStatus('failed');
+                setCardErrorMsg(e?.message || 'Erro ao processar cartão');
+                setCardToken(null);
+              }
+              return;
+            }
+
+            // Case 2: First-time submit — "Pagar" inside Brick finalizes the entire order
+            if (!success) {
+              setCardBrickOpen(false);
+              await runOrderSubmission({ cardTokenOverride: token, cardInfoOverride: info });
+            }
+          }}
+        />
+      )}
+
+      {/* Card success modal — same UX pattern as PIX confirmation */}
+      {successData && (() => {
+        const buildPaidUrl = () => {
+          if (!storeWhatsapp || !successData) return '';
+          const phone = storeWhatsapp.replace(/\D/g, '');
+          const fullPhone = phone.startsWith('55') ? phone : `55${phone}`;
+          const { orderNumber, orderPayload, sentItems } = successData;
+          const PAYMENT_LABELS: Record<string, string> = { pix: 'Pix', pix_auto: 'Pix', cash: 'Dinheiro', credit: 'Cartão de Crédito', debit: 'Cartão de Débito' };
+          const isPickupOrder = orderPayload.address === 'Retirada no balcão';
+          let itemsText = '';
+          for (const item of sentItems) {
+            itemsText += `${item.quantity}x ${item.name} - ${formatCurrency(item.price * item.quantity)}\n`;
+          }
+          const lines = [
+            `✅ *Olá, acabei de pagar meu pedido com cartão de crédito! Pedido #${orderNumber || '---'}*`,
+            ``,
+            `🛒 *RESUMO DO PEDIDO*`,
+            ``,
+            `Cliente: ${orderPayload.customer_name}`,
+            `Telefone: ${orderPayload.customer_phone}`,
+            ``,
+            `Tipo: ${isPickupOrder ? 'Retirada no balcão' : 'Entrega'}`,
+          ];
+          if (!isPickupOrder) {
+            let addr = orderPayload.address;
+            if (orderPayload.address_number) addr += `, ${orderPayload.address_number}`;
+            if (orderPayload.complement) addr += ` - ${orderPayload.complement}`;
+            if (orderPayload.neighborhood_name) addr += ` (${orderPayload.neighborhood_name})`;
+            lines.push(`Endereço: ${addr}`);
+          }
+          lines.push(``);
+          lines.push(`Pagamento: ${PAYMENT_LABELS[orderPayload.payment_method] || orderPayload.payment_method} (PAGO)`);
+          lines.push(``);
+          lines.push(`*Itens:*`);
+          lines.push(itemsText.trim());
+          lines.push(``);
+          lines.push(`Subtotal: ${formatCurrency(orderPayload.subtotal)}`);
+          if (orderPayload.discount_value > 0) {
+            lines.push(`Desconto (${orderPayload.coupon_code}): -${formatCurrency(orderPayload.discount_value)}`);
+          }
+          lines.push(`Entrega: ${isPickupOrder ? 'Retirada' : orderPayload.delivery_fee === 0 ? 'Grátis' : formatCurrency(orderPayload.delivery_fee)}`);
+          lines.push(`*Total: ${formatCurrency(orderPayload.total)}*`);
+          return `https://wa.me/${fullPhone}?text=${encodeURIComponent(lines.join('\n'))}`;
+        };
+        return (
+          <CardSuccessModal
+            open={cardSuccessOpen}
+            onOpenChange={setCardSuccessOpen}
+            paidWhatsappUrl={buildPaidUrl()}
+            whatsappEnabled={!!(whatsappOrderEnabled && storeWhatsapp)}
+          />
+        );
+      })()}
     </>
   );
 }

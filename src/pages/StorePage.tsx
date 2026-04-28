@@ -43,6 +43,8 @@ function StoreContent() {
       if (error) throw error;
       return (data || [])
         .filter((p: any) => p.is_archived !== true)
+        // Hide manually disabled products, but keep stock-controlled (out of stock) visible as "Indisponível"
+        .filter((p: any) => p.has_stock_control === true || p.available !== false)
         .map(product => ({
           ...product,
           available: getEffectiveAvailability(product),

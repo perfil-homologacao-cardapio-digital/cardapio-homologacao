@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2, Copy } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, ChevronLeft, ChevronRight, GripVertical, Link2, Copy, Ban } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { toast } from '@/hooks/use-toast';
 import { compressImage, compressImageToWebp } from '@/lib/imageUtils';
@@ -74,6 +74,8 @@ function SortableProductItem({
   onDelete,
   onCopyLink,
   onDuplicate,
+  onToggleAvailable,
+  isTogglingAvailable,
 }: {
   product: any;
   categories: any[];
@@ -82,6 +84,8 @@ function SortableProductItem({
   onDelete: () => void;
   onCopyLink: () => void;
   onDuplicate: () => void;
+  onToggleAvailable: (next: boolean) => void;
+  isTogglingAvailable: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = {
@@ -94,9 +98,16 @@ function SortableProductItem({
     return categories.find(c => c.id === catId)?.name || null;
   };
   const effectiveAvailable = getEffectiveAvailability(product);
+  // Stock-controlled products are managed by stock; disable manual toggle
+  const stockManaged = !!product.has_stock_control;
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-3 bg-card border border-border/50 rounded-xl p-3">
+    <div ref={setNodeRef} style={style} className={`relative flex items-center gap-3 border rounded-xl p-3 transition-colors ${product.available ? 'bg-card border-border/50' : 'bg-destructive/5 border-destructive/30'}`}>
+      {!product.available && (
+        <span className="absolute -top-2 -right-2 flex items-center gap-1 bg-destructive/10 text-destructive border border-destructive/30 rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-sm">
+          <Ban className="h-3 w-3" /> Indisponível
+        </span>
+      )}
       <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none flex-shrink-0">
         <GripVertical className="h-4 w-4" />
       </button>
@@ -116,6 +127,19 @@ function SortableProductItem({
           {product.has_stock_control && <span className="ml-1">• Estoque: {product.stock_quantity}</span>}
           {getCategoryName(product.category_id) && <span className="ml-1">• {getCategoryName(product.category_id)}</span>}
         </p>
+      </div>
+      <div
+        className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/40 flex-shrink-0"
+        title={stockManaged ? 'Disponibilidade controlada pelo estoque' : (product.available ? 'Disponível' : 'Indisponível')}
+      >
+        <Switch
+          checked={!!product.available}
+          disabled={stockManaged || isTogglingAvailable}
+          onCheckedChange={(checked) => onToggleAvailable(checked)}
+        />
+        <span className={`text-[11px] font-semibold hidden sm:inline ${product.available ? 'text-foreground' : 'text-muted-foreground'}`}>
+          {product.available ? 'Disponível' : 'Indisponível'}
+        </span>
       </div>
       <Button variant="ghost" size="icon" className="h-8 w-8" title="Copiar link do produto" onClick={onCopyLink}><Link2 className="h-4 w-4" /></Button>
       <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar produto" onClick={onDuplicate}><Copy className="h-4 w-4" /></Button>
@@ -269,6 +293,30 @@ export function AdminProducts() {
       toast({ title: editing ? 'Produto atualizado' : 'Produto criado' });
     },
     onError: (err: any) => toast({ title: 'Erro', description: err.message, variant: 'destructive' }),
+  });
+
+  const toggleAvailable = useMutation({
+    mutationFn: async ({ id, available }: { id: string; available: boolean }) => {
+      const { error } = await supabase.from('products').update({ available } as any).eq('id', id);
+      if (error) throw error;
+      return { id, available };
+    },
+    onMutate: async ({ id, available }) => {
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+      const previous = queryClient.getQueryData<any[]>(['products']);
+      queryClient.setQueryData<any[]>(['products'], (old) =>
+        (old || []).map((p) => (p.id === id ? { ...p, available } : p))
+      );
+      return { previous };
+    },
+    onError: (err: any, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(['products'], ctx.previous);
+      toast({ title: 'Erro ao atualizar disponibilidade', description: err.message, variant: 'destructive' });
+    },
+    onSuccess: ({ available }) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast({ title: available ? 'Produto disponível' : 'Produto indisponível' });
+    },
   });
 
   const remove = useMutation({
@@ -763,6 +811,8 @@ export function AdminProducts() {
                 onEdit={() => handleEdit(p)}
                 onDelete={() => setDeleteId(p.id)}
                 onDuplicate={() => setDuplicateId(p.id)}
+                onToggleAvailable={(next) => toggleAvailable.mutate({ id: p.id, available: next })}
+                isTogglingAvailable={toggleAvailable.isPending && toggleAvailable.variables?.id === p.id}
                 onCopyLink={() => {
                   const baseUrl = window.location.origin;
                   const link = `${baseUrl}/?product=${p.id}`;

@@ -16,6 +16,7 @@ type AdminWhatsAppOrder = {
   preorder_date: string | null;
   subtotal: number | string;
   total: number | string;
+  notes?: string | null;
 };
 
 type AdminWhatsAppItem = {
@@ -78,7 +79,24 @@ export function buildAdminWhatsAppMessage({
       }, {} as Record<string, string[]>);
 
     Object.entries(grouped).forEach(([groupName, options]) => {
-      lines.push(`  └ ${groupName}: ${options.join(', ')}`);
+      // Count duplicates so combo selections like "5 Coxinhas" appear once with quantity
+      const counts = options.reduce((acc, opt) => {
+        if (opt) acc[opt] = (acc[opt] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const isCombo = groupName === 'Itens do Combo';
+      const entries = Object.entries(counts);
+
+      if (isCombo) {
+        // One line per item in the combo for better readability
+        entries.forEach(([name, qty]) => {
+          lines.push(`  └ ${qty}x ${name}`);
+        });
+      } else {
+        const formatted = entries.map(([name, qty]) => (qty > 1 ? `${qty}x ${name}` : name));
+        lines.push(`  └ ${groupName}: ${formatted.join(', ')}`);
+      }
     });
   });
 
@@ -105,6 +123,10 @@ export function buildAdminWhatsAppMessage({
     if (order.neighborhood_name) {
       lines.push(order.neighborhood_name);
     }
+  }
+
+  if (order.notes && String(order.notes).trim()) {
+    lines.push('', `📝 *Observações:* ${String(order.notes).trim()}`);
   }
 
   lines.push('', '✅ *Podemos confirmar?*');

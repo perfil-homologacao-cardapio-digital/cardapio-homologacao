@@ -40,6 +40,7 @@ export const PAYMENT_METHODS = {
 } as const;
 
 export const PAYMENT_STATUSES = {
-  pending: { label: 'Pendente', color: 'bg-warning text-warning-foreground' },
+  pending: { label: 'Aguardando pagamento', color: 'bg-warning text-warning-foreground' },
   paid: { label: 'Pago', color: 'bg-success text-success-foreground' },
+  failed: { label: 'Pagamento recusado', color: 'bg-destructive text-destructive-foreground' },
 } as const;

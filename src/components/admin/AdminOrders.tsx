@@ -1,21 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, formatPhone, ORDER_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Printer, Eye, Trash2, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react';
+import { Printer, Eye, Trash2, ChevronLeft, ChevronRight, MessageCircle, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useSettings } from '@/hooks/useSettings';
 import { buildAdminWhatsAppMessage } from '@/lib/adminWhatsAppMessage';
-const ITEMS_PER_PAGE = 7;
+import { SalesReport } from './SalesReport';
+const ITEMS_PER_PAGE = 10;
+
+type DateFilter = 'today' | 'yesterday' | '7d' | '30d' | 'custom';
+
+function toLocalDateInput(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 interface AdminOrdersProps {
-  onOrderViewed?: (orderId: string) => void;
+  onOrderViewed?: (orderId: string) => void | Promise<void>;
 }
 
 export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
@@ -24,15 +36,89 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
   const [page, setPage] = useState(0);
   const { data: settings } = useSettings();
   const storeName = settings?.business_name || 'Meu Estabelecimento';
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+  const today = new Date();
+  const [customStart, setCustomStart] = useState<string>(toLocalDateInput(today));
+  const [customEnd, setCustomEnd] = useState<string>(toLocalDateInput(today));
+  const [reportOpen, setReportOpen] = useState(false);
 
-  const { data: orders = [] } = useQuery({
+  const { data: orders = [], refetch: refetchOrders } = useQuery({
     queryKey: ['admin-orders'],
     queryFn: async () => {
       const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       return data as (typeof data[number] & { opened_at: string | null })[];
     },
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
+
+  const mergeOrderIntoCache = useCallback((updatedOrder: any) => {
+    if (!updatedOrder?.id) return;
+
+    queryClient.setQueryData<any[]>(['admin-orders'], (current) => {
+      if (!Array.isArray(current)) return current;
+
+      let found = false;
+      const next = current.map(order => {
+        if (order.id !== updatedOrder.id) return order;
+        found = true;
+        return { ...order, ...updatedOrder };
+      });
+
+      return found ? next : current;
+    });
+  }, [queryClient]);
+
+  const refreshOrderFromDatabase = useCallback(async (orderId: string) => {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[AdminOrders] Falha ao buscar pedido atualizado', { orderId, error });
+      return;
+    }
+
+    if (data) mergeOrderIntoCache(data);
+  }, [mergeOrderIntoCache]);
+
+  // Realtime: when any order is updated (e.g. webhook sets payment_status=paid),
+  // automatically refresh the admin list — no manual action needed.
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-orders-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
+        (payload) => {
+          const updatedOrder = payload.new as any;
+
+          console.info('[AdminOrders] UPDATE recebido em orders', {
+            id: updatedOrder?.id,
+            payment_method: updatedOrder?.payment_method,
+            payment_status: updatedOrder?.payment_status,
+          });
+
+          if (updatedOrder?.id) {
+            mergeOrderIntoCache(updatedOrder);
+            void refreshOrderFromDatabase(updatedOrder.id);
+          }
+
+          void queryClient.refetchQueries({ queryKey: ['admin-orders'], type: 'active' });
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === 'SUBSCRIBED') console.info('[AdminOrders] Realtime inscrito em orders UPDATE');
+        if (status === 'CHANNEL_ERROR') console.error('[AdminOrders] Erro no canal realtime de orders', error);
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, [mergeOrderIntoCache, queryClient, refreshOrderFromDatabase]);
 
   const { data: orderItems = [] } = useQuery({
     queryKey: ['admin-order-items', selectedOrder],
@@ -90,27 +176,139 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
 
   const order = orders.find(o => o.id === selectedOrder);
 
-  const totalPages = Math.ceil(orders.length / ITEMS_PER_PAGE);
-  const paginatedOrders = orders.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const handleOpenOrder = async (orderId: string) => {
+    setSelectedOrder(orderId);
+    await onOrderViewed?.(orderId);
+    await refreshOrderFromDatabase(orderId);
+    void refetchOrders();
+  };
+
+  const filteredOrders = useMemo(() => {
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+    if (dateFilter === 'today') {
+      start = new Date(now); start.setHours(0, 0, 0, 0);
+      end = new Date(now); end.setHours(23, 59, 59, 999);
+    } else if (dateFilter === 'yesterday') {
+      start = new Date(now); start.setDate(start.getDate() - 1); start.setHours(0, 0, 0, 0);
+      end = new Date(start); end.setHours(23, 59, 59, 999);
+    } else if (dateFilter === '7d') {
+      start = new Date(now); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
+      end = new Date(now); end.setHours(23, 59, 59, 999);
+    } else if (dateFilter === '30d') {
+      start = new Date(now); start.setDate(start.getDate() - 29); start.setHours(0, 0, 0, 0);
+      end = new Date(now); end.setHours(23, 59, 59, 999);
+    } else {
+      start = customStart ? new Date(customStart + 'T00:00:00') : new Date(0);
+      end = customEnd ? new Date(customEnd + 'T23:59:59') : new Date(now);
+    }
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    return orders.filter(o => {
+      const t = new Date(o.created_at).getTime();
+      return t >= startMs && t <= endMs;
+    });
+  }, [orders, dateFilter, customStart, customEnd]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE));
+  const paginatedOrders = filteredOrders.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
   // Reset page if it goes out of bounds
   if (page > 0 && page >= totalPages) setPage(Math.max(0, totalPages - 1));
 
   const handlePrint = () => {
     const is58 = settings?.printer_paper_width === '58mm';
-    const body = document.body;
-    const had = body.classList.contains('printer-58mm');
-    if (is58) body.classList.add('printer-58mm');
-    else body.classList.remove('printer-58mm');
 
-    const cleanup = () => {
-      if (!had) body.classList.remove('printer-58mm');
-      window.removeEventListener('afterprint', cleanup);
+    // Fallback to in-page print if popup is blocked or DOM not ready
+    const fallbackPrint = () => {
+      const body = document.body;
+      const had = body.classList.contains('printer-58mm');
+      if (is58) body.classList.add('printer-58mm');
+      else body.classList.remove('printer-58mm');
+      const cleanup = () => {
+        if (!had) body.classList.remove('printer-58mm');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      setTimeout(() => window.print(), 50);
     };
-    window.addEventListener('afterprint', cleanup);
 
-    // Give the browser a tick to apply the class before opening the print dialog
-    setTimeout(() => window.print(), 50);
+    // Locate the appropriate receipt node currently rendered in the dialog
+    const selector = is58
+      ? '[data-print-receipt-58="true"]'
+      : '[data-print-receipt="true"]';
+    const node = document.querySelector(selector) as HTMLElement | null;
+    if (!node) {
+      fallbackPrint();
+      return;
+    }
+
+    const popup = window.open(
+      '',
+      'print_order',
+      'width=900,height=650,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
+    );
+    if (!popup) {
+      fallbackPrint();
+      return;
+    }
+
+    // Clone receipt HTML & make it visible (the source has display:none in 58mm)
+    const html = node.outerHTML;
+    const bodyClass = is58 ? 'printer-58mm' : '';
+    const pageSize = is58 ? '58mm auto' : '80mm auto';
+    const widthMm = is58 ? '58mm' : '80mm';
+
+    // Reuse the project stylesheet so receipt classes (.receipt-58mm-*, .thermal-receipt) render identically
+    const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    popup.document.open();
+    popup.document.write(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Imprimir pedido</title>
+${styleLinks}
+<style>
+  @page { size: ${pageSize}; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  body { padding: 8px; }
+  /* Force receipt visible on screen inside the popup */
+  [data-print-receipt-58="true"], [data-print-receipt="true"] {
+    display: block !important;
+    visibility: visible !important;
+    width: ${widthMm};
+    max-width: ${widthMm};
+    margin: 0 auto;
+  }
+</style>
+</head>
+<body class="${bodyClass}">
+${html}
+</body>
+</html>`);
+    popup.document.close();
+
+    const triggerPrint = () => {
+      try {
+        popup.focus();
+        popup.print();
+      } catch {}
+      // Try to auto-close after print dialog resolves
+      const close = () => { try { popup.close(); } catch {} };
+      popup.addEventListener('afterprint', close);
+      // Fallback close in case afterprint never fires
+      setTimeout(close, 60_000);
+    };
+
+    if (popup.document.readyState === 'complete') {
+      setTimeout(triggerPrint, 150);
+    } else {
+      popup.addEventListener('load', () => setTimeout(triggerPrint, 150));
+    }
   };
 
   const handleWhatsApp = () => {
@@ -127,12 +325,55 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
     window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  const filterButtons: { key: DateFilter; label: string }[] = [
+    { key: 'today', label: 'Hoje' },
+    { key: 'yesterday', label: 'Ontem' },
+    { key: '7d', label: 'Últimos 7 dias' },
+    { key: '30d', label: 'Últimos 30 dias' },
+    { key: 'custom', label: 'Personalizado' },
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl font-extrabold mb-6">Pedidos</h1>
-      {orders.length === 0 ? (
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-extrabold">Pedidos</h1>
+        <Button variant="outline" className="rounded-xl" onClick={() => setReportOpen(true)}>
+          <FileText className="h-4 w-4 mr-2" /> Relatório de vendas
+        </Button>
+      </div>
+
+      {/* Date filters */}
+      <div className="mb-4 space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {filterButtons.map(b => (
+            <Button
+              key={b.key}
+              variant={dateFilter === b.key ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => { setDateFilter(b.key); setPage(0); }}
+            >
+              {b.label}
+            </Button>
+          ))}
+        </div>
+        {dateFilter === 'custom' && (
+          <div className="grid grid-cols-2 gap-2 max-w-md">
+            <div>
+              <Label className="text-xs">Início</Label>
+              <Input type="date" value={customStart} onChange={e => { setCustomStart(e.target.value); setPage(0); }} />
+            </div>
+            <div>
+              <Label className="text-xs">Fim</Label>
+              <Input type="date" value={customEnd} onChange={e => { setCustomEnd(e.target.value); setPage(0); }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {filteredOrders.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          <p className="text-lg">Nenhum pedido ainda</p>
+          <p className="text-lg">Nenhum pedido neste período</p>
         </div>
       ) : (
         <>
@@ -151,7 +392,21 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-extrabold">#{o.order_number}</span>
                       <Badge className={cn('text-[10px]', statusInfo.color)}>{statusInfo.label}</Badge>
-                      {(() => { const ps = PAYMENT_STATUSES[(o as any).payment_status as keyof typeof PAYMENT_STATUSES] || PAYMENT_STATUSES.pending; return <Badge className={cn('text-[10px]', ps.color)}>Pgto: {ps.label}</Badge>; })()}
+                      {(() => {
+                        const status = (o as any).payment_status as string | undefined;
+                        const method = o.payment_method as string | undefined;
+                        let label: string = PAYMENT_STATUSES.pending.label;
+                        let color: string = PAYMENT_STATUSES.pending.color;
+                        if (status === 'paid') {
+                          if (method === 'pix') { label = 'Pago via Pix'; color = 'bg-emerald-500 text-white'; }
+                          else if (method === 'credit') { label = 'Pago via Cartão'; color = 'bg-blue-500 text-white'; }
+                          else { label = 'Pago'; color = PAYMENT_STATUSES.paid.color; }
+                        } else if (status === 'failed') {
+                          label = PAYMENT_STATUSES.failed.label;
+                          color = PAYMENT_STATUSES.failed.color;
+                        }
+                        return <Badge className={cn('text-[10px]', color)}>Pgto: {label}</Badge>;
+                      })()}
                       {!isViewed && <Badge className="text-[10px] bg-orange-500 text-white">NOVO</Badge>}
                       <span className="text-xs text-muted-foreground">{formatDate(o.created_at)}</span>
                     </div>
@@ -169,7 +424,7 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => { setSelectedOrder(o.id); onOrderViewed?.(o.id); }}>
+                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => { void handleOpenOrder(o.id); }}>
                       <Eye className="h-4 w-4" />
                     </Button>
                     <AlertDialog>
@@ -197,24 +452,26 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-6">
-              <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {Array.from({ length: totalPages }, (_, i) => (
-                <Button
-                  key={i}
-                  variant={page === i ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-8 w-8 rounded-lg p-0 text-xs"
-                  onClick={() => setPage(i)}
-                >
-                  {i + 1}
+            <div className="mt-6 -mx-4 md:mx-0 overflow-x-auto md:overflow-visible [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex items-center md:justify-center gap-2 px-4 md:px-0 w-max md:w-auto min-w-full whitespace-nowrap">
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg shrink-0" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
-              ))}
-              <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" disabled={page === totalPages - 1} onClick={() => setPage(p => p + 1)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <Button
+                    key={i}
+                    variant={page === i ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 w-8 rounded-lg p-0 text-xs shrink-0"
+                    onClick={() => setPage(i)}
+                  >
+                    {i + 1}
+                  </Button>
+                ))}
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg shrink-0" disabled={page === totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </>
@@ -237,8 +494,23 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                   <div><span className="text-muted-foreground">Pagamento:</span> <strong>{PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</strong></div>
                   {order.needs_change && <div><span className="text-muted-foreground">Troco para:</span> <strong>{order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</strong></div>}
                   {order.preorder_date && <div><span className="text-muted-foreground">Data encomenda:</span> <strong>{order.preorder_date.split('-').reverse().join('/')}</strong></div>}
-                  <div className="col-span-2 flex items-center gap-2">
+                  <div className="col-span-2 flex items-center gap-2 flex-wrap">
                     <span className="text-muted-foreground">Status pgto:</span>
+                    {(() => {
+                      const status = (order as any).payment_status as string | undefined;
+                      const method = order.payment_method as string | undefined;
+                      let label: string = PAYMENT_STATUSES.pending.label;
+                      let color: string = PAYMENT_STATUSES.pending.color;
+                      if (status === 'paid') {
+                        if (method === 'pix') { label = 'Pago via Pix'; color = 'bg-emerald-500 text-white'; }
+                        else if (method === 'credit') { label = 'Pago via Cartão'; color = 'bg-blue-500 text-white'; }
+                        else { label = 'Pago'; color = PAYMENT_STATUSES.paid.color; }
+                      } else if (status === 'failed') {
+                        label = PAYMENT_STATUSES.failed.label;
+                        color = PAYMENT_STATUSES.failed.color;
+                      }
+                      return <Badge className={cn('text-[10px]', color)}>{label}</Badge>;
+                    })()}
                     <Select value={(order as any).payment_status || 'pending'} onValueChange={v => updatePaymentStatus.mutate({ id: order.id, payment_status: v })}>
                       <SelectTrigger className="w-32 h-8 rounded-lg text-xs">
                         <SelectValue />
@@ -279,13 +551,42 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
                           <span>{item.quantity}x {item.product_name}</span>
                           <span className="font-semibold">{formatCurrency(Number(item.subtotal))}</span>
                         </div>
-                        {groupedWithCount.map(([gn, opts]) => (
-                          <p key={gn} className="text-xs text-muted-foreground ml-4">{gn}: {opts.join(', ')}</p>
-                        ))}
+                        {groupedWithCount.map(([gn, opts]) => {
+                          const isCombo = gn === 'Itens do Combo';
+                          if (isCombo) {
+                            return (
+                              <div key={gn} className="ml-4 mt-1">
+                                <p className="text-xs font-semibold text-muted-foreground">{gn}:</p>
+                                <ul className="text-xs text-muted-foreground ml-2">
+                                   {opts.map((o, i) => (
+                                    <li key={`${gn}-${i}`}>{o}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={gn} className="ml-4 mt-1">
+                              <p className="text-xs font-semibold text-muted-foreground">{gn}:</p>
+                              <ul className="text-xs text-muted-foreground ml-2">
+                                {opts.map((o, i) => (
+                                  <li key={`${gn}-${i}`}>{o}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
                 </div>
+
+                {(order as any).notes && (
+                  <div className="border-t pt-3">
+                    <h4 className="font-bold mb-1">📝 Observações do cliente</h4>
+                    <p className="text-sm text-foreground whitespace-pre-wrap bg-accent/40 rounded-lg p-2">{(order as any).notes}</p>
+                  </div>
+                )}
 
                 <div className="border-t pt-3 space-y-1">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(Number(order.subtotal))}</span></div>
@@ -459,6 +760,8 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      <SalesReport open={reportOpen} onOpenChange={setReportOpen} />
     </div>
   );
 }

@@ -11,10 +11,12 @@ import { AdminCategories } from '@/components/admin/AdminCategories';
 import { AdminNeighborhoods } from '@/components/admin/AdminNeighborhoods';
 import { AdminCoupons } from '@/components/admin/AdminCoupons';
 import { AdminSettings } from '@/components/admin/AdminSettings';
+import { AdminPaymentAutomation } from '@/components/admin/AdminPaymentAutomation';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Package, ListOrdered, Tags, MapPin, Settings, LogOut, Bell, Menu, X, Ticket } from 'lucide-react';
+import { LayoutDashboard, Package, ListOrdered, Tags, MapPin, Settings, LogOut, Bell, Menu, X, Ticket, Zap, Sun, Moon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useAdminTheme } from '@/hooks/useAdminTheme';
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -23,6 +25,7 @@ const NAV_ITEMS = [
   { key: 'categories', label: 'Categorias', icon: Tags },
   { key: 'neighborhoods', label: 'Bairros', icon: MapPin },
   { key: 'coupons', label: 'Cupons', icon: Ticket },
+  { key: 'payment-automation', label: 'Pagamentos Automatizados', icon: Zap },
   { key: 'settings', label: 'Configurações', icon: Settings },
 ];
 
@@ -124,6 +127,7 @@ export default function AdminPage() {
   const bellIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { data: settings } = useSettings();
   const soundEnabled = settings?.sound_alert !== 'false';
+  const { isDark, toggle: toggleTheme } = useAdminTheme();
 
   // Fetch initial orders to populate known IDs
   const { data: orders } = useQuery({
@@ -216,6 +220,15 @@ export default function AdminPage() {
             <Package className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="font-extrabold text-lg">Admin</span>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={isDark ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            title={isDark ? 'Tema claro' : 'Tema escuro'}
+            className="ml-auto h-8 w-8 rounded-lg border border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
         </div>
         <nav className="flex-1 space-y-1">
           {NAV_ITEMS.map(item => (
@@ -244,9 +257,19 @@ export default function AdminPage() {
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-card border-b border-border px-4 py-3 flex items-center justify-between">
         <button onClick={() => setMobileNav(true)} className="p-1"><Menu className="h-5 w-5" /></button>
         <span className="font-extrabold">Admin</span>
-        <div className="relative">
-          {badgeCount > 0 && <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 text-[8px] bg-destructive rounded-full flex items-center justify-center">{badgeCount}</Badge>}
-          <Bell className="h-5 w-5 text-muted-foreground" onClick={() => handleTabChange('orders')} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={isDark ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
+          <div className="relative">
+            {badgeCount > 0 && <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 text-[8px] bg-destructive rounded-full flex items-center justify-center">{badgeCount}</Badge>}
+            <Bell className="h-5 w-5 text-muted-foreground" onClick={() => handleTabChange('orders')} />
+          </div>
         </div>
       </div>
 
@@ -290,6 +313,7 @@ export default function AdminPage() {
         {tab === 'categories' && <AdminCategories />}
         {tab === 'neighborhoods' && <AdminNeighborhoods />}
         {tab === 'coupons' && <AdminCoupons />}
+        {tab === 'payment-automation' && <AdminPaymentAutomation />}
         {tab === 'settings' && <AdminSettings />}
       </main>
     </div>
