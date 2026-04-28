@@ -1290,7 +1290,8 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           </div>
         )}
 
-        {form.payment_method === 'credit' && !showCardBrick && (
+        {/* "Em breve" só faz sentido quando o modo automatizado está LIGADO mas o Brick (public key) ainda não foi configurado. No modo manual, cartão de crédito é uma forma de pagamento normal e o cliente paga na entrega. */}
+        {form.payment_method === 'credit' && paymentAutomationEnabled && !showCardBrick && (
           <Alert className="rounded-xl border-warning/40 bg-warning/10">
             <AlertTitle>Em breve</AlertTitle>
             <AlertDescription>
@@ -1426,14 +1427,14 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
               !items.length ||
               !canCheckout ||
               !hasValidPaymentMethod ||
-              (form.payment_method === 'credit' && !showCardBrick) ||
+              (form.payment_method === 'credit' && paymentAutomationEnabled && !showCardBrick) ||
               (minOrderEnabled && isDelivery && subtotal < minOrderValue)
             }
             className="w-full h-12 rounded-xl font-bold text-base"
           >
             {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> :
               !canCheckout ? 'Loja Fechada' :
-              (form.payment_method === 'credit' && !showCardBrick) ? 'Cartão em breve' :
+              (form.payment_method === 'credit' && paymentAutomationEnabled && !showCardBrick) ? 'Cartão em breve' :
               'Enviar Pedido'}
           </Button>
         )}

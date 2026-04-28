@@ -17,7 +17,7 @@ import { buildAdminWhatsAppMessage } from '@/lib/adminWhatsAppMessage';
 import { SalesReport } from './SalesReport';
 const ITEMS_PER_PAGE = 10;
 
-type DateFilter = 'today' | 'yesterday' | '7d' | '30d' | 'custom';
+type DateFilter = 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
 
 function toLocalDateInput(d: Date): string {
   const y = d.getFullYear();
@@ -199,6 +199,9 @@ export function AdminOrders({ onOrderViewed }: AdminOrdersProps) {
     } else if (dateFilter === '30d') {
       start = new Date(now); start.setDate(start.getDate() - 29); start.setHours(0, 0, 0, 0);
       end = new Date(now); end.setHours(23, 59, 59, 999);
+    } else if (dateFilter === 'all') {
+      start = new Date(0);
+      end = new Date(now); end.setHours(23, 59, 59, 999);
     } else {
       start = customStart ? new Date(customStart + 'T00:00:00') : new Date(0);
       end = customEnd ? new Date(customEnd + 'T23:59:59') : new Date(now);
@@ -330,6 +333,7 @@ ${html}
     { key: 'yesterday', label: 'Ontem' },
     { key: '7d', label: 'Últimos 7 dias' },
     { key: '30d', label: 'Últimos 30 dias' },
+    { key: 'all', label: 'Histórico (todos)' },
     { key: 'custom', label: 'Personalizado' },
   ];
 
@@ -368,6 +372,11 @@ ${html}
               <Input type="date" value={customEnd} onChange={e => { setCustomEnd(e.target.value); setPage(0); }} />
             </div>
           </div>
+        )}
+        {dateFilter === 'today' && (
+          <p className="text-xs text-muted-foreground italic">
+            Exibindo pedidos de hoje. Para ver vendas antigas, use o filtro <strong>Histórico (todos)</strong>.
+          </p>
         )}
       </div>
 

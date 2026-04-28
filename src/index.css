@@ -484,6 +484,8 @@
   body.printing-sales-report {
     width: auto !important;
     height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   body.printing-sales-report #root {
@@ -492,19 +494,31 @@
 
   body.printing-sales-report [data-radix-portal] {
     display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   /* Override the global thermal print sizing for the sales report dialog */
   body.printing-sales-report [role="dialog"],
   body.printing-sales-report [data-radix-dialog-content],
   body.printing-sales-report .sales-report-dialog {
+    position: static !important;
+    transform: none !important;
+    inset: auto !important;
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
-    padding: 16px !important;
+    max-height: none !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 6mm 8mm !important;
     background: #fff !important;
     color: #000 !important;
     font-family: Arial, Helvetica, sans-serif !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
   }
 
   /* Hide every other open dialog (e.g. order detail) when printing the report */
@@ -520,11 +534,22 @@
   /* Show the report header (store name) only on print */
   body.printing-sales-report .sales-report-printable .report-header {
     display: block !important;
-    margin-bottom: 12px !important;
+    margin: 0 0 6px 0 !important;
   }
 
   body.printing-sales-report .sales-report-printable {
     color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Compact spacing between top-level blocks */
+  body.printing-sales-report .sales-report-printable > * {
+    margin-top: 6px !important;
+    margin-bottom: 0 !important;
+  }
+  body.printing-sales-report .sales-report-printable > *:first-child {
+    margin-top: 0 !important;
   }
 
   body.printing-sales-report .sales-report-printable table {
@@ -535,14 +560,7 @@
   body.printing-sales-report .sales-report-printable th,
   body.printing-sales-report .sales-report-printable td {
     border: 1px solid #999 !important;
-    padding: 6px 8px !important;
+    padding: 4px 6px !important;
   }
-
 }
 
-@media print {
-  /* When printing the sales report, override page size */
-  /* Note: @page inside conditional isn't possible, but body.printing-sales-report
-     overrides above keep the layout correct under default 80mm @page from earlier rules.
-     We force a wider effective area by neutralizing width constraints on html/body. */
-}
