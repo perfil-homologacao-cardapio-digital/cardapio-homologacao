@@ -479,13 +479,25 @@
    Sales Report Print Mode
    Uses A4 layout, hides admin chrome and other dialogs,
    shows ONLY the .sales-report-printable content.
+
+   IMPORTANT: This block must remain the LAST @media print rule
+   in this file so it overrides the thermal/80mm/58mm print rules
+   above (same specificity → source order wins).
    ============================================ */
 @media print {
+  /* Force page reset to top — overrides any flex/grid centering from
+     global styles or Radix Dialog when the sales report is printing */
+  html:has(body.printing-sales-report),
   body.printing-sales-report {
     width: auto !important;
     height: auto !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
+    display: block !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    background: #fff !important;
   }
 
   body.printing-sales-report #root {
@@ -494,22 +506,35 @@
 
   body.printing-sales-report [data-radix-portal] {
     display: block !important;
+    position: static !important;
     margin: 0 !important;
     padding: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    inset: auto !important;
+    transform: none !important;
   }
 
-  /* Override the global thermal print sizing for the sales report dialog */
+  /* Override the global thermal print sizing for the sales report dialog.
+     Force the dialog to render as a normal block at the top of the page,
+     neutralizing Radix's fixed/centered positioning. */
   body.printing-sales-report [role="dialog"],
   body.printing-sales-report [data-radix-dialog-content],
   body.printing-sales-report .sales-report-dialog {
     position: static !important;
     transform: none !important;
+    translate: none !important;
     inset: auto !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
     max-height: none !important;
     height: auto !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 6mm 8mm !important;
     background: #fff !important;
@@ -519,6 +544,9 @@
     border-radius: 0 !important;
     box-shadow: none !important;
     overflow: visible !important;
+    display: block !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
   }
 
   /* Hide every other open dialog (e.g. order detail) when printing the report */
@@ -540,7 +568,11 @@
   body.printing-sales-report .sales-report-printable {
     color: #000 !important;
     margin: 0 !important;
+    margin-top: 0 !important;
     padding: 0 !important;
+    padding-top: 0 !important;
+    position: static !important;
+    top: 0 !important;
   }
 
   /* Compact spacing between top-level blocks */
