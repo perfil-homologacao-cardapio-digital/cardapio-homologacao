@@ -638,6 +638,9 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
               installments: effectiveCardInfo?.installments || 1,
               payment_method_id: effectiveCardInfo?.payment_method_id,
               issuer_id: effectiveCardInfo?.issuer_id,
+              payer_email: effectiveCardInfo?.email || "",
+              payer_name: effectiveCardInfo?.cardholderName || "",
+              payer_document: effectiveCardInfo?.identificationNumber || "",
             },
           });
           if (cardErr) throw new Error(cardErr.message || 'Erro ao processar cartão');
@@ -1467,6 +1470,9 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
                     installments: info?.installments || 1,
                     payment_method_id: info?.payment_method_id,
                     issuer_id: info?.issuer_id,
+                    payer_email: info?.email || "",
+                    payer_name: info?.cardholderName || "",
+                    payer_document: info?.identificationNumber || "",
                   },
                 });
                 if (cardErr) throw new Error(cardErr.message || 'Erro ao processar cartão');

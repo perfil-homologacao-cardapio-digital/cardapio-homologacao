@@ -110,6 +110,14 @@ export function CardPaymentBrickModal({
                   issuer_id: cardFormData?.issuer_id,
                   installments: cardFormData?.installments,
                   last_four: cardFormData?.token ? '****' : undefined,
+                  email: cardFormData?.payer?.email,
+                  cardholderName: cardFormData?.cardholderName ?? cardFormData?.payer?.cardholderName,
+                  identificationNumber:
+                    cardFormData?.payer?.identification?.number
+                    ?? cardFormData?.identificationNumber,
+                  identificationType:
+                    cardFormData?.payer?.identification?.type
+                    ?? cardFormData?.identificationType,
                 };
                 console.log('[CardBrick] Token gerado:', token);
                 console.log('[CardBrick] Info segura:', safeInfo);
