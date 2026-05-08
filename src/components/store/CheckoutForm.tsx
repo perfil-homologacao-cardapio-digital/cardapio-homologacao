@@ -726,7 +726,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       let itemsText = '';
       for (const item of sentItems) {
         const sels = item.selections || [];
-        const comboSels = sels.filter((s: any) => s.group_name === 'Itens do Combo');
+        const comboSels = sels.filter((s: any) => s.group_name === 'Itens do Combo' || s.group_name === 'Combo');
         const flavorSels = sels.filter((s: any) => s.group_name === 'Sabores');
         const crustSels = sels.filter((s: any) => s.group_name === 'Borda Recheada' || s.group_name === 'Borda');
         const otherSels = sels.filter((s: any) => !comboSels.includes(s) && !flavorSels.includes(s) && !crustSels.includes(s));
@@ -745,7 +745,20 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
           itemsText += `  Borda recheada: ${crustSels.map((s: any) => s.option_name).join(', ')}\n`;
         }
         if (otherSels.length > 0) {
-          otherSels.forEach((s: any) => { itemsText += `  ${s.group_name}: ${s.option_name}${s.price > 0 ? ` (+${formatCurrency(s.price)})` : ''}\n`; });
+          // Group duplicates by group + option to avoid printing the same line N times
+          const groupedOther: Record<string, { group: string; option: string; price: number; qty: number }> = {};
+          otherSels.forEach((s: any) => {
+            const key = `${s.group_name}||${s.option_name}`;
+            if (!groupedOther[key]) {
+              groupedOther[key] = { group: s.group_name, option: s.option_name, price: Number(s.price) || 0, qty: 0 };
+            }
+            groupedOther[key].qty += 1;
+          });
+          Object.values(groupedOther).forEach((g) => {
+            const qtyPrefix = g.qty > 1 ? `${g.qty}x ` : '';
+            const priceSuffix = g.price > 0 ? ` (+${formatCurrency(g.price)})` : '';
+            itemsText += `  ${g.group}: ${qtyPrefix}${g.option}${priceSuffix}\n`;
+          });
         }
       }
 
