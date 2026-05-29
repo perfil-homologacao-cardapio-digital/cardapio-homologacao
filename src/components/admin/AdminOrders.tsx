@@ -696,6 +696,11 @@ ${html}
                   <div className="receipt-58mm-line">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                   {order.needs_change && <div className="receipt-58mm-line">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
                   {order.preorder_date && <div className="receipt-58mm-line receipt-58mm-strong">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
+                  {(order as any).notes && (
+                    <div className="receipt-58mm-line mt-1">
+                      <strong>Obs:</strong> {(order as any).notes}
+                    </div>
+                  )}
                 </div>
                 <div className="receipt-58mm-footer">--- Obrigado pela preferencia! ---</div>
               </div>
@@ -763,6 +768,11 @@ ${html}
                 <div className="text-xs">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                 {order.needs_change && <div className="text-xs">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
                 {order.preorder_date && <div className="text-xs font-bold mt-1">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
+                {(order as any).notes && (
+                  <div className="text-xs mt-1">
+                    <strong>Obs:</strong> {(order as any).notes}
+                  </div>
+                )}
                 <div className="text-center text-[10px] mt-3">--- Obrigado pela preferência! ---</div>
               </div>
             </>

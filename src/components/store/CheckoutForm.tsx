@@ -1165,12 +1165,16 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         })()}
 
         {/* Delivery time estimate */}
-        {isDelivery && settings?.delivery_time_estimate && (
+        {((isDelivery && settings?.delivery_time_estimate) || (isPickup && settings?.pickup_time_estimate)) && (
           <div className="flex items-center gap-3 bg-accent/50 rounded-xl p-4 border border-border/50">
             <Clock className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             <div>
-              <p className="text-sm text-muted-foreground">Tempo estimado de entrega</p>
-              <p className="text-sm font-semibold text-foreground">{settings.delivery_time_estimate}</p>
+              <p className="text-sm text-muted-foreground">
+                Tempo estimado de {isDelivery ? 'entrega' : 'retirada'}
+              </p>
+              <p className="text-sm font-semibold text-foreground">
+                {isDelivery ? settings.delivery_time_estimate : settings.pickup_time_estimate}
+              </p>
             </div>
           </div>
         )}

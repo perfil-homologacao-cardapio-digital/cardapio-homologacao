@@ -46,6 +46,7 @@ export function AdminSettings() {
     store_address_complement: '',
     store_neighborhood: '',
     delivery_time_estimate: '',
+    pickup_time_estimate: '',
     pix_key: '',
     pix_recipient_name: '',
     pix_recipient_city: '',
@@ -83,6 +84,7 @@ export function AdminSettings() {
         store_address_complement: settings.store_address_complement || '',
         store_neighborhood: settings.store_neighborhood || '',
         delivery_time_estimate: settings.delivery_time_estimate || '',
+        pickup_time_estimate: settings.pickup_time_estimate || '',
         pix_key: settings.pix_key || '',
         pix_recipient_name: settings.pix_recipient_name || '',
         pix_recipient_city: settings.pix_recipient_city || '',
@@ -120,6 +122,7 @@ export function AdminSettings() {
         { key: 'store_address_complement', value: form.store_address_complement },
         { key: 'store_neighborhood', value: form.store_neighborhood },
         { key: 'delivery_time_estimate', value: form.delivery_time_estimate },
+        { key: 'pickup_time_estimate', value: form.pickup_time_estimate },
         { key: 'pix_key', value: form.pix_key },
         { key: 'pix_recipient_name', value: form.pix_recipient_name },
         { key: 'pix_recipient_city', value: form.pix_recipient_city },
@@ -270,6 +273,23 @@ export function AdminSettings() {
             <SelectContent>
               <SelectItem value="none">Não informar tempo de entrega</SelectItem>
               {['20 min', '30 min', '40 min', '50 min', '60 min', '1h 15min', '1h 30min', '2h'].map(t => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+...
+        {/* Tempo de retirada */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-2">
+          <Label className="font-bold">🕐 Tempo de Retirada</Label>
+          <p className="text-xs text-muted-foreground">Tempo médio estimado para retiradas no balcão</p>
+          <Select value={form.pickup_time_estimate || 'none'} onValueChange={v => set('pickup_time_estimate', v === 'none' ? '' : v)}>
+            <SelectTrigger className="rounded-xl">
+              <SelectValue placeholder="Selecione o tempo estimado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Não informar tempo de retirada</SelectItem>
+              {['10 min', '15 min', '20 min', '25 min', '30 min', '40 min', '50 min', '1h'].map(t => (
                 <SelectItem key={t} value={t}>{t}</SelectItem>
               ))}
             </SelectContent>
