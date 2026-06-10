@@ -12,8 +12,9 @@ import { AdminNeighborhoods } from '@/components/admin/AdminNeighborhoods';
 import { AdminCoupons } from '@/components/admin/AdminCoupons';
 import { AdminSettings } from '@/components/admin/AdminSettings';
 import { AdminPaymentAutomation } from '@/components/admin/AdminPaymentAutomation';
+import { AdminAgenda } from '@/components/admin/AdminAgenda';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Package, ListOrdered, Tags, MapPin, Settings, LogOut, Bell, Menu, X, Ticket, Zap, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Package, ListOrdered, Tags, MapPin, Settings, LogOut, Bell, Menu, X, Ticket, Zap, Sun, Moon, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useAdminTheme } from '@/hooks/useAdminTheme';
@@ -21,6 +22,7 @@ import { useAdminTheme } from '@/hooks/useAdminTheme';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'orders', label: 'Pedidos', icon: ListOrdered },
+  { key: 'agenda', label: 'Agenda', icon: Calendar },
   { key: 'products', label: 'Produtos', icon: Package },
   { key: 'categories', label: 'Categorias', icon: Tags },
   { key: 'neighborhoods', label: 'Bairros', icon: MapPin },
@@ -309,6 +311,7 @@ export default function AdminPage() {
       <main className="flex-1 md:p-6 p-4 pt-16 md:pt-6 overflow-y-auto">
         {tab === 'dashboard' && <AdminDashboard />}
         {tab === 'orders' && <AdminOrders onOrderViewed={handleOrderViewed} />}
+        {tab === 'agenda' && <AdminAgenda />}
         {tab === 'products' && <AdminProducts />}
         {tab === 'categories' && <AdminCategories />}
         {tab === 'neighborhoods' && <AdminNeighborhoods />}

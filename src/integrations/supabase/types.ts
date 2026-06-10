@@ -288,11 +288,17 @@ export type Database = {
           needs_change: boolean | null
           neighborhood_id: string | null
           neighborhood_name: string | null
+          notes: string | null
           opened_at: string | null
           order_number: number
+          payment_expires_at: string | null
+          payment_id: string | null
           payment_method: string
+          payment_qr_code: string | null
+          payment_qr_code_base64: string | null
           payment_status: string
           preorder_date: string | null
+          preorder_time: string | null
           status: string
           subtotal: number
           total: number
@@ -313,11 +319,17 @@ export type Database = {
           needs_change?: boolean | null
           neighborhood_id?: string | null
           neighborhood_name?: string | null
+          notes?: string | null
           opened_at?: string | null
           order_number?: number
+          payment_expires_at?: string | null
+          payment_id?: string | null
           payment_method: string
+          payment_qr_code?: string | null
+          payment_qr_code_base64?: string | null
           payment_status?: string
           preorder_date?: string | null
+          preorder_time?: string | null
           status?: string
           subtotal?: number
           total?: number
@@ -338,11 +350,17 @@ export type Database = {
           needs_change?: boolean | null
           neighborhood_id?: string | null
           neighborhood_name?: string | null
+          notes?: string | null
           opened_at?: string | null
           order_number?: number
+          payment_expires_at?: string | null
+          payment_id?: string | null
           payment_method?: string
+          payment_qr_code?: string | null
+          payment_qr_code_base64?: string | null
           payment_status?: string
           preorder_date?: string | null
+          preorder_time?: string | null
           status?: string
           subtotal?: number
           total?: number
@@ -518,6 +536,7 @@ export type Database = {
           has_variations: boolean
           id: string
           image_url: string | null
+          is_archived: boolean
           is_preorder: boolean
           name: string
           pizza_crust_price: number
@@ -545,6 +564,7 @@ export type Database = {
           has_variations?: boolean
           id?: string
           image_url?: string | null
+          is_archived?: boolean
           is_preorder?: boolean
           name: string
           pizza_crust_price?: number
@@ -572,6 +592,7 @@ export type Database = {
           has_variations?: boolean
           id?: string
           image_url?: string | null
+          is_archived?: boolean
           is_preorder?: boolean
           name?: string
           pizza_crust_price?: number

@@ -22,6 +22,7 @@ type OrderPayload = {
   needs_change: boolean | null;
   change_amount: number | null;
   preorder_date: string | null;
+  preorder_time: string | null;
   coupon_code: string | null;
   discount_value: number | null;
   notes: string | null;
@@ -68,6 +69,10 @@ function stockError(message: string, code: "OUT_OF_STOCK" | "INSUFFICIENT_STOCK"
 function normalizeNumber(value: unknown, fallback = 0) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 Deno.serve(async (req) => {
@@ -203,6 +208,7 @@ Deno.serve(async (req) => {
 
     try {
       // Create order (server-side; keeps orders SELECT private to admins)
+      const preorderTime = normalizeText(order.preorder_time);
       const { data: createdOrder, error: orderErr } = await supabase
         .from("orders")
         .insert({
@@ -220,6 +226,7 @@ Deno.serve(async (req) => {
           needs_change: order.needs_change,
           change_amount: order.change_amount,
           preorder_date: order.preorder_date,
+          preorder_time: preorderTime,
           coupon_code: order.coupon_code ?? null,
           discount_value: order.discount_value ?? 0,
           notes: order.notes ?? null,

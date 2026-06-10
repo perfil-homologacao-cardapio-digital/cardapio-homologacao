@@ -54,6 +54,8 @@ export function AdminSettings() {
     printer_paper_width: '80mm' as '58mm' | '80mm',
   });
   const [schedule, setSchedule] = useState<WeeklySchedule>(() => parseSchedule(null));
+  const [preorderTimes, setPreorderTimes] = useState<string[]>([]);
+  const [newPreorderTime, setNewPreorderTime] = useState<string>('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
@@ -92,8 +94,40 @@ export function AdminSettings() {
         printer_paper_width: (settings.printer_paper_width === '58mm' ? '58mm' : '80mm'),
       });
       setSchedule(parseSchedule(settings.weekly_schedule));
+      try {
+        const raw = settings.preorder_times;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setPreorderTimes(parsed.filter((t): t is string => typeof t === 'string'));
+          }
+        } else {
+          setPreorderTimes([]);
+        }
+      } catch {
+        setPreorderTimes([]);
+      }
     }
   }, [settings]);
+
+  const addPreorderTime = () => {
+    const t = (newPreorderTime || '').trim();
+    if (!/^\d{2}:\d{2}$/.test(t)) {
+      toast({ title: 'Horário inválido', description: 'Informe no formato HH:MM', variant: 'destructive' });
+      return;
+    }
+    if (preorderTimes.includes(t)) {
+      toast({ title: 'Horário já cadastrado', variant: 'destructive' });
+      return;
+    }
+    const next = [...preorderTimes, t].sort();
+    setPreorderTimes(next);
+    setNewPreorderTime('');
+  };
+
+  const removePreorderTime = (t: string) => {
+    setPreorderTimes(prev => prev.filter(x => x !== t));
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -129,6 +163,7 @@ export function AdminSettings() {
         { key: 'theme_mode', value: form.theme_mode || 'default' },
         { key: 'printer_paper_width', value: form.printer_paper_width || '80mm' },
         { key: 'weekly_schedule', value: JSON.stringify(schedule) },
+        { key: 'preorder_times', value: JSON.stringify(preorderTimes) },
       ];
       for (const entry of entries) {
         const { error } = await supabase.from('settings').upsert(
@@ -295,6 +330,45 @@ export function AdminSettings() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Horários de Encomenda */}
+        <div className="bg-accent/50 rounded-xl p-4 space-y-3">
+          <Label className="font-bold">📅 Horários de Encomenda</Label>
+          <p className="text-xs text-muted-foreground">
+            Cadastre os horários disponíveis para retirada de encomendas. O cliente verá esses horários no checkout quando o pedido tiver produtos de encomenda.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="time"
+              value={newPreorderTime}
+              onChange={(e) => setNewPreorderTime(e.target.value)}
+              className="rounded-xl"
+            />
+            <Button type="button" onClick={addPreorderTime} className="rounded-xl shrink-0">
+              Adicionar
+            </Button>
+          </div>
+          {preorderTimes.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {preorderTimes.map(t => (
+                <div key={t} className="inline-flex items-center gap-1 bg-background border border-border rounded-full pl-3 pr-1 py-1 text-sm">
+                  <span className="font-medium">{t}</span>
+                  <button
+                    type="button"
+                    onClick={() => removePreorderTime(t)}
+                    className="h-6 w-6 inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    aria-label={`Remover ${t}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">Nenhum horário cadastrado.</p>
+          )}
+        </div>
+
 
         <div><Label>Notas de entrega</Label><Textarea value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} className="rounded-xl" /></div>
         <WeeklyScheduleEditor schedule={schedule} onChange={setSchedule} />

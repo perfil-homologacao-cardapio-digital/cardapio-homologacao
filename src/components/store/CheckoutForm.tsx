@@ -160,6 +160,18 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const allPreorder = items.length > 0 && items.every(i => i.is_preorder);
   const canCheckout = storeIsOpen || allPreorder;
 
+  // Preorder pickup times configured by the admin (settings.preorder_times — JSON array of "HH:MM").
+  const preorderTimes = useMemo<string[]>(() => {
+    try {
+      const raw = settings?.preorder_times;
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, [settings?.preorder_times]);
+
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; type: string; value: number } | null>(null);
@@ -202,6 +214,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
     needs_change: false,
     change_amount: '',
     preorder_date: '',
+    preorder_time: '',
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -490,6 +503,10 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
       toast({ title: 'Data obrigatória', description: 'Selecione uma data para itens de encomenda', variant: 'destructive' });
       return false;
     }
+    if (hasPreorderItems && preorderTimes.length > 0 && !form.preorder_time) {
+      toast({ title: 'Horário obrigatório', description: 'Selecione um horário de retirada para a encomenda', variant: 'destructive' });
+      return false;
+    }
     if (!hasValidPaymentMethod) {
       toast({ title: 'Pagamento obrigatório', description: 'Selecione uma forma de pagamento para continuar.', variant: 'destructive' });
       return false;
@@ -591,6 +608,7 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         needs_change: Boolean(form.needs_change),
         change_amount: form.needs_change && form.change_amount ? safeNum(form.change_amount) : null,
         preorder_date: form.preorder_date || null,
+        preorder_time: form.preorder_time || null,
         coupon_code: appliedCoupon?.code || null,
         discount_value: safeNum(discountValue),
         notes: String(form.notes || '').trim() || null,
@@ -809,7 +827,8 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
         const [year, month, day] = orderPayload.preorder_date.split('T')[0]?.split('-') ?? [];
         const formatted = year && month && day ? `${day}/${month}/${year}` : orderPayload.preorder_date;
         lines.push(``);
-        lines.push(`📅 *Data da encomenda: ${formatted}*`);
+        const timePart = orderPayload.preorder_time ? ` às ${orderPayload.preorder_time}` : '';
+        lines.push(`📅 *Data da encomenda: ${formatted}${timePart}*`);
       }
 
       if (orderPayload.notes) {
@@ -1344,10 +1363,27 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
             const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDays);
             const minStr = minDate.toISOString().split('T')[0];
             return (
-              <div className="bg-warning/10 rounded-xl p-3">
-                <Label htmlFor="preorder-date">Data de entrega (encomenda) *</Label>
-                <Input id="preorder-date" type="date" required min={minStr} value={form.preorder_date} onChange={e => set('preorder_date', e.target.value)} className="rounded-xl mt-1" />
-                <p className="text-xs text-muted-foreground mt-1">Data mínima: {minDate.toLocaleDateString('pt-BR')}</p>
+              <div className="bg-warning/10 rounded-xl p-3 space-y-3">
+                <div>
+                  <Label htmlFor="preorder-date">Data de entrega (encomenda) *</Label>
+                  <Input id="preorder-date" type="date" required min={minStr} value={form.preorder_date} onChange={e => set('preorder_date', e.target.value)} className="rounded-xl mt-1" />
+                  <p className="text-xs text-muted-foreground mt-1">Data mínima: {minDate.toLocaleDateString('pt-BR')}</p>
+                </div>
+                {preorderTimes.length > 0 && (
+                  <div>
+                    <Label htmlFor="preorder-time">Horário de retirada *</Label>
+                    <Select value={form.preorder_time} onValueChange={(v) => set('preorder_time', v)}>
+                      <SelectTrigger id="preorder-time" className="rounded-xl mt-1">
+                        <SelectValue placeholder="Selecione um horário" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {preorderTimes.map(t => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             );
           } catch {

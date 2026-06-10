@@ -502,7 +502,7 @@ ${html}
                   {order.neighborhood_name && <div><span className="text-muted-foreground">Bairro:</span> <strong>{order.neighborhood_name}</strong></div>}
                   <div><span className="text-muted-foreground">Pagamento:</span> <strong>{PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</strong></div>
                   {order.needs_change && <div><span className="text-muted-foreground">Troco para:</span> <strong>{order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</strong></div>}
-                  {order.preorder_date && <div><span className="text-muted-foreground">Data encomenda:</span> <strong>{order.preorder_date.split('-').reverse().join('/')}</strong></div>}
+                  {order.preorder_date && <div><span className="text-muted-foreground">Encomenda:</span> <strong>{order.preorder_date.split('-').reverse().join('/')}{(order as any).preorder_time ? ` às ${(order as any).preorder_time}` : ''}</strong></div>}
                   <div className="col-span-2 flex items-center gap-2 flex-wrap">
                     <span className="text-muted-foreground">Status pgto:</span>
                     {(() => {
@@ -695,7 +695,7 @@ ${html}
                 <div className="receipt-58mm-section">
                   <div className="receipt-58mm-line">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                   {order.needs_change && <div className="receipt-58mm-line">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
-                  {order.preorder_date && <div className="receipt-58mm-line receipt-58mm-strong">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
+                  {order.preorder_date && <div className="receipt-58mm-line receipt-58mm-strong">Encomenda: {order.preorder_date.split('-').reverse().join('/')}{(order as any).preorder_time ? ` às ${(order as any).preorder_time}` : ''}</div>}
                   {(order as any).notes && (
                     <div className="receipt-58mm-line mt-1">
                       <strong>Obs:</strong> {(order as any).notes}
@@ -767,7 +767,7 @@ ${html}
                 <div className="border-t border-dashed my-2" />
                 <div className="text-xs">Pgto: {PAYMENT_METHODS[order.payment_method as keyof typeof PAYMENT_METHODS] || order.payment_method}</div>
                 {order.needs_change && <div className="text-xs">Troco p/ {order.change_amount ? formatCurrency(Number(order.change_amount)) : '-'}</div>}
-                {order.preorder_date && <div className="text-xs font-bold mt-1">Encomenda: {order.preorder_date.split('-').reverse().join('/')}</div>}
+                {order.preorder_date && <div className="text-xs font-bold mt-1">Encomenda: {order.preorder_date.split('-').reverse().join('/')}{(order as any).preorder_time ? ` às ${(order as any).preorder_time}` : ''}</div>}
                 {(order as any).notes && (
                   <div className="text-xs mt-1">
                     <strong>Obs:</strong> {(order as any).notes}

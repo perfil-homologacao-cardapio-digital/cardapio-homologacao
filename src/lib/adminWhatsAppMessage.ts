@@ -14,6 +14,7 @@ type AdminWhatsAppOrder = {
   order_number: number;
   payment_method: string;
   preorder_date: string | null;
+  preorder_time?: string | null;
   subtotal: number | string;
   total: number | string;
   notes?: string | null;
@@ -61,7 +62,8 @@ export function buildAdminWhatsAppMessage({
   ];
 
   if (order.preorder_date) {
-    lines.push(`📅 *Data da encomenda: ${formatPreorderDate(order.preorder_date)}*`);
+    const timePart = order.preorder_time ? ` às ${order.preorder_time}` : '';
+    lines.push(`📅 *Data da encomenda: ${formatPreorderDate(order.preorder_date)}${timePart}*`);
   }
 
   lines.push('', '*Itens:*');
