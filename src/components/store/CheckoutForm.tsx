@@ -276,13 +276,20 @@ function CheckoutFormInner({ onBack }: CheckoutFormProps) {
   const showCardBrick = paymentAutomationUnlocked && paymentAutomationEnabled && !!mercadopagoPublicKey;
 
   const availablePaymentMethods = useMemo(() => {
-    // When automated payments are ENABLED, simplify the list to only "Pix" (automated)
-    // and "Cartão de crédito" — to reduce confusion. Manual flows remain unchanged when OFF.
+    // When automated payments are ENABLED:
+    //   - Pix => automated (pix_auto, Mercado Pago)
+    //   - Cartão de Crédito => automated (Mercado Pago Brick)
+    //   - Cartão de Débito => manual (offline, cobrado presencialmente)
+    //   - Dinheiro => manual (offline, com campo de troco)
     if (showPixAuto) {
       return [
         { value: 'pix_auto', label: 'Pix', key: 'payment_pix_auto' },
         { value: 'credit', label: 'Cartão de Crédito', key: 'payment_credit' },
-      ];
+        { value: 'debit', label: 'Cartão de Débito', key: 'payment_debit' },
+        { value: 'cash', label: 'Dinheiro', key: 'payment_cash' },
+      ].filter(method =>
+        method.value === 'pix_auto' || !settings || settings[method.key] !== 'false'
+      );
     }
     // Original behavior (unchanged) when automated payments are OFF
     return [
@@ -1330,6 +1337,34 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
           </div>
         )}
 
+        {form.payment_method === 'pix_auto' && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold">Pagamento automático via Pix</p>
+                <p className="text-xs text-muted-foreground">
+                  Ao finalizar o pedido, será gerado um QR Code Pix. O pagamento será confirmado automaticamente após a compensação.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {form.payment_method === 'debit' && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold">Pagamento na retirada/entrega</p>
+                <p className="text-xs text-muted-foreground">
+                  O pagamento será realizado presencialmente no momento da retirada ou entrega do pedido.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* "Em breve" só faz sentido quando o modo automatizado está LIGADO mas o Brick (public key) ainda não foi configurado. No modo manual, cartão de crédito é uma forma de pagamento normal e o cliente paga na entrega. */}
         {form.payment_method === 'credit' && paymentAutomationEnabled && !showCardBrick && (
           <Alert className="rounded-xl border-warning/40 bg-warning/10">
@@ -1341,17 +1376,30 @@ ${JSON.stringify(debugError?.error, null, 2)}`;
         )}
 
         {form.payment_method === 'cash' && (
-          <div className="space-y-3 bg-accent/50 rounded-xl p-3">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="needs-change" className="cursor-pointer">Precisa de troco?</Label>
-              <Switch id="needs-change" checked={form.needs_change} onCheckedChange={v => set('needs_change', v)} />
-            </div>
-            {form.needs_change && (
-              <div>
-                <Label htmlFor="change">Troco para quanto?</Label>
-                <Input id="change" type="number" step="0.01" min="0" value={form.change_amount} onChange={e => set('change_amount', e.target.value)} placeholder="R$ 0,00" className="rounded-xl" />
+          <div className="space-y-3">
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-semibold">Pagamento na retirada/entrega</p>
+                  <p className="text-xs text-muted-foreground">
+                    O pagamento será realizado presencialmente no momento da retirada ou entrega do pedido.
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
+            <div className="bg-accent/50 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="needs-change" className="cursor-pointer">Precisa de troco?</Label>
+                <Switch id="needs-change" checked={form.needs_change} onCheckedChange={v => set('needs_change', v)} />
+              </div>
+              {form.needs_change && (
+                <div>
+                  <Label htmlFor="change">Troco para quanto?</Label>
+                  <Input id="change" type="number" step="0.01" min="0" value={form.change_amount} onChange={e => set('change_amount', e.target.value)} placeholder="R$ 0,00" className="rounded-xl" />
+                </div>
+              )}
+            </div>
           </div>
         )}
 
